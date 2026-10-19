@@ -1,5 +1,11 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
+## Current request — Five-attempt live story improvement loop
+- [ ] Authenticate and recover the exact prompt from the latest failed Monkey/Rabbit run.
+- [ ] Run up to five normal-flow attempts; retain private evidence, mandatory gates and weighted consistency/continuity reviews; stop at a verified pass.
+- [ ] Diagnose confirmed failures, add targeted regressions and retest without changing providers, security or the original prompt.
+- [ ] Report attempt/run ids, scores, delivery/reload evidence and blockers. No Cloudflare deployment or production configuration changes authorized.
+
 ## Current request — Structured output inside Markdown
 - [x] Enable callouts, flows, tables and safe links in Markdown boxes and expanded view.
 - [x] 88 focused tests passed; automatic build OK. Browser fixture renders callout, table, flow, checklist and math; expanded rows preserved, screenshot inspected, no page errors. No new AI generation or deployment.
