@@ -1,10 +1,10 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
 ## Current request — Five-attempt live story improvement loop
-- [ ] Authenticate and recover the exact prompt from the latest failed Monkey/Rabbit run.
-- [ ] Run up to five normal-flow attempts; retain private evidence, mandatory gates and weighted consistency/continuity reviews; stop at a verified pass.
-- [ ] Diagnose confirmed failures, add targeted regressions and retest without changing providers, security or the original prompt.
-- [ ] Report attempt/run ids, scores, delivery/reload evidence and blockers. No Cloudflare deployment or production configuration changes authorized.
+- [x] Authenticated and recovered the exact prompt from latest failed chat c142cb99/run 39190584448; composer equality verified before submission.
+- [ ] Remaining four attempts blocked: attempt 1 job 072aa505/run 39196017653 failed scene-five prop verification after two repairs (320s); rejected scenes/extraction/repair evidence were deleted and no private diagnostic transport is active. Scores cannot be independently calculated.
+- [ ] Evidence-confirmed generation fix/regression/retest waits on retained raw evidence; activating an owner-private bounded diagnostic transport needs Cloudflare deployment authorization. No blind retry, speculative fix, provider/security/config change or deployment performed.
+- [x] Reported rubric, mandatory gates, identifiers and limitations in docs/story-live-testing-2026-10-19.md. 54 existing story/validator tests passed; reload restores failure, not a story. Completion criteria unmet.
 
 ## Current request — Structured output inside Markdown
 - [x] Enable callouts, flows, tables and safe links in Markdown boxes and expanded view.
