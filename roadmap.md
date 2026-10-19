@@ -1,8 +1,8 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
 ## Current request — One full story operation
-- [ ] Submit the exact recovered Monkey/Rabbit prompt once through authenticated normal chat; no automatic retry or deployment.
-- [ ] Inspect terminal outcome and reload, report evidence-supported failure or independently verified ratings and mandatory checks.
+- [x] Submitted exact recovered Monkey/Rabbit prompt once through authenticated normal chat; SHA256 unchanged. Job 1e2acad2-381d-47f5-bd3a-9fbd4ac9bddd, chat 6484a5bb-0d16-4e54-8571-449d9d0d755c, matching GitHub run 39209884952.
+- [x] Failed after 364s: plan first candidate passed, scene checks remained unresolved after two repair rounds (units 4/6/9 flagged; final recorded failures in 4/6). Reload preserves failure; result null, zero artifacts; detailed rejected evidence unavailable. Ratings withheld. Full report: docs/story-one-operation-2026-10-19.md. No retry, source fix or deployment.
 
 ## Current request — Authorized end-to-end story workflow completion
 - [ ] Activate private evidence retention: app source now has runner-session writes, owner-only explicit reads, SHA-256, seven-day expiry, atomic 64-entry/4 MB job caps and migration; runtime capture/upload and live activation remain blocked on external deployment.
