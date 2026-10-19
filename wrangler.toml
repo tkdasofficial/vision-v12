@@ -44,6 +44,11 @@ binding = "SANDBOX_DB"
 database_name = "vision-sandbox"
 database_id = "4d8098d8-e148-46ea-9e79-b4d35c148c8f"
 
+# CPU time per invocation (paid plan; default 30 s). Story queue runs parse long AI
+# streams, so they get the maximum; wall-clock waiting on providers does not count.
+[limits]
+cpu_ms = 300000
+
 # Story generation runs as resumable Cloudflare Queue runs (never GitHub Actions).
 # One run at a time; a crashed run is redelivered and resumes from its finished slots.
 [[queues.producers]]
