@@ -136,3 +136,20 @@ describe("story run timing limits", () => {
     expect(STORY_STALE_MS).toBeGreaterThan(QUEUE_RUN_LIMIT_MS);
   });
 });
+
+describe("Workers Free plan: one provider call per queue run", () => {
+  it("finishes a job across many single-call runs without repeating finished work", async () => {
+    const { STORY_CALLS_PER_RUN } = await import("@/lib/runtime/runtime.server");
+    expect(STORY_CALLS_PER_RUN).toBe(1);
+    const job = new JobRun("job-onecall-1", "user-1");
+    const s = scripted(new Set([2]));
+    let out: "done" | "yield" = "yield";
+    let runs = 0;
+    while (out === "yield" && runs < 30) { runs++; out = await runCloudStoryJob(job, PROMPT, { call: s.call, maxCalls: 1 }); }
+    expect(out).toBe("done");
+    // blueprint, story, scene1, scene2 draft, scene2 regeneration — each exactly once.
+    expect(s.calls).toEqual(["blueprint", "story", "scene1#1", "scene2#1", "scene2#2"]);
+    expect(runs).toBe(s.calls.length + 1);
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
+  });
+});
