@@ -147,7 +147,7 @@ export async function runQueuedStoryJob(jobId: string): Promise<"done" | "yield"
   if (fresh) await syncRuntimeJob(fresh);
   // vision-sandbox is temporary: once the result is delivered (or the job ended), free its slots for the next story.
   const end = (await d1<any>("SELECT status FROM runtime_jobs WHERE job_id = ?", [jobId]))[0];
-  if (end && !["queued", "dispatched", "running", "uploaded"].includes(end.status)) await releaseStorySlots(rt.user_id, jobId);
+  if (end && !["queued", "dispatched", "running"].includes(end.status)) await releaseStorySlots(rt.user_id, jobId);
   return "done";
 }
 
