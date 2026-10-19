@@ -92,6 +92,12 @@ export async function setSlotStatus(userId: string, jobId: string, slotId: numbe
   return rows.length > 0;
 }
 
+/** Checkpoints in-progress work (current candidate + repair round) on a slot this job is generating. */
+export async function saveSlotProgress(userId: string, jobId: string, slotId: number, findings: string, db: SandboxDb = sandboxDb): Promise<boolean> {
+  const rows = await db("UPDATE generation_slots SET findings = ?, updated_at = ? WHERE slot_id = ? AND user_id = ? AND job_id = ? AND status = 'generating' RETURNING slot_id", [findings, now(), slotId, userId, jobId]);
+  return rows.length > 0;
+}
+
 /** Stores a large body in generation_records and points the slot at it. */
 export async function saveRecord(userId: string, jobId: string, slotId: number, kind: "user_prompt" | "blueprint" | "story" | "prompt", content: string, db: SandboxDb = sandboxDb): Promise<string> {
   await ensureSlots(db);

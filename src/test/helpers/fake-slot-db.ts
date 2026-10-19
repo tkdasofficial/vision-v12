@@ -55,6 +55,13 @@ export function fakeDb() {
       }
       return [];
     }
+    if (sql.startsWith("UPDATE generation_slots SET findings = ?, updated_at = ?")) {
+      const [findings, , slot_id, user_id, job_id] = params as any[];
+      const s = slots.get(slot_id);
+      if (!s || s.user_id !== user_id || s.job_id !== job_id || s.status !== "generating") return [];
+      s.findings = findings;
+      return [{ slot_id }];
+    }
     if (sql.startsWith("UPDATE generation_slots SET status = ?")) {
       const to = params[0] as string;
       const slot_id = params[params.length - 4] as number;
