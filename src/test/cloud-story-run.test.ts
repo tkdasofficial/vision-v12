@@ -149,7 +149,7 @@ describe("Workers Free plan: one provider call per queue run", () => {
     expect(out).toBe("done");
     // blueprint, story, scene1, scene2 draft, scene2 regeneration — each exactly once.
     expect(s.calls).toEqual(["blueprint", "story", "scene1#1", "scene2#1", "scene2#2"]);
-    expect(runs).toBe(s.calls.length + 1);
+    expect(runs).toBe(s.calls.length);
     expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
   });
 });
