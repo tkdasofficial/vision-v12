@@ -143,7 +143,7 @@ describe("Workers Free plan: one provider call per queue run", () => {
     expect(STORY_CALLS_PER_RUN).toBe(1);
     const job = new JobRun("job-onecall-1", "user-1");
     const s = scripted(new Set([2]));
-    let out: "done" | "yield" = "yield";
+    let out: "done" | "yield" | "wait" = "yield";
     let runs = 0;
     while (out === "yield" && runs < 30) { runs++; out = await runCloudStoryJob(job, PROMPT, { call: s.call, maxCalls: 1 }); }
     expect(out).toBe("done");
