@@ -1,5 +1,12 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
+## Current request — Authorized end-to-end story workflow completion
+- [ ] Retain bounded owner-private rejected plans/scenes, extraction and repair evidence, with hashes and expiry.
+- [ ] Wire shared report acceptance and lifecycle protections; regression-test every confirmed defect.
+- [ ] Activate the corrected backend and runtime using authorized deployment; preserve existing security/providers/routing.
+- [ ] Run unchanged Monkey/Rabbit prompt within four remaining attempts; inspect actual output, score, and verify chat reload.
+- [ ] Document results and unresolved blockers without claiming unverified success.
+
 ## Current request — Five-attempt live story improvement loop
 - [x] Authenticated and recovered the exact prompt from latest failed chat c142cb99/run 39190584448; composer equality verified before submission.
 - [ ] Remaining four attempts blocked: attempt 1 job 072aa505/run 39196017653 failed scene-five prop verification after two repairs (320s); rejected scenes/extraction/repair evidence were deleted and no private diagnostic transport is active. Scores cannot be independently calculated.
