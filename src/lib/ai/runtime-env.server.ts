@@ -33,6 +33,12 @@ export function getD1Binding(): { prepare: (sql: string) => any } | undefined {
   return db && typeof db.prepare === "function" ? db : undefined;
 }
 
+/** The Cloudflare Queue producer for story generation (env.STORY_QUEUE), when bound. */
+export function getStoryQueue(): { send: (body: unknown, opts?: unknown) => Promise<void> } | undefined {
+  const q = workerEnv()?.["STORY_QUEUE"] as any;
+  return q && typeof q.send === "function" ? q : undefined;
+}
+
 /** The Workers AI binding (env.AI), when the Worker has one. */
 export function getAiBinding(): { run: (model: string, input: unknown, opts?: unknown) => Promise<any> } | undefined {
   const ai = workerEnv()?.["AI"] as any;

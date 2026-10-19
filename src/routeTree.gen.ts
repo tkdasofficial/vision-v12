@@ -97,6 +97,7 @@ import { Route as VerifySplatRouteImport } from './routes/verify.$'
 import { Route as VideosIndexRouteImport } from './routes/videos.index'
 import { Route as VideosVideoChatIdRouteImport } from './routes/videos.$videoChatId'
 import { Route as ApiArtifactsArtifactIdRouteImport } from './routes/api/artifacts.$artifactId'
+import { Route as ApiInternalStoryRunRouteImport } from './routes/api/internal.story-run'
 import { Route as ApiJobsJobIdRouteImport } from './routes/api/jobs.$jobId'
 import { Route as ApiOauthProviderRouteImport } from './routes/api/oauth.$provider'
 import { Route as ApiSandboxGenerationsJobIdRouteImport } from './routes/api/sandbox-generations.$jobId'
@@ -549,6 +550,11 @@ const ApiArtifactsArtifactIdRoute = ApiArtifactsArtifactIdRouteImport.update({
   path: '/api/artifacts/$artifactId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalStoryRunRoute = ApiInternalStoryRunRouteImport.update({
+  id: '/api/internal/story-run',
+  path: '/api/internal/story-run',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiJobsJobIdRoute = ApiJobsJobIdRouteImport.update({
   id: '/$jobId',
   path: '/$jobId',
@@ -691,6 +697,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/videos/': typeof VideosIndexRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
+  '/api/internal/story-run': typeof ApiInternalStoryRunRoute
   '/api/jobs/$jobId': typeof ApiJobsJobIdRoute
   '/api/oauth/$provider': typeof ApiOauthProviderRoute
   '/api/sandbox-generations/$jobId': typeof ApiSandboxGenerationsJobIdRoute
@@ -788,6 +795,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/videos': typeof VideosIndexRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
+  '/api/internal/story-run': typeof ApiInternalStoryRunRoute
   '/api/jobs/$jobId': typeof ApiJobsJobIdRoute
   '/api/oauth/$provider': typeof ApiOauthProviderRoute
   '/api/sandbox-generations/$jobId': typeof ApiSandboxGenerationsJobIdRoute
@@ -889,6 +897,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/videos/': typeof VideosIndexRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
+  '/api/internal/story-run': typeof ApiInternalStoryRunRoute
   '/api/jobs/$jobId': typeof ApiJobsJobIdRoute
   '/api/oauth/$provider': typeof ApiOauthProviderRoute
   '/api/sandbox-generations/$jobId': typeof ApiSandboxGenerationsJobIdRoute
@@ -991,6 +1000,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/videos/'
     | '/api/artifacts/$artifactId'
+    | '/api/internal/story-run'
     | '/api/jobs/$jobId'
     | '/api/oauth/$provider'
     | '/api/sandbox-generations/$jobId'
@@ -1088,6 +1098,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/videos'
     | '/api/artifacts/$artifactId'
+    | '/api/internal/story-run'
     | '/api/jobs/$jobId'
     | '/api/oauth/$provider'
     | '/api/sandbox-generations/$jobId'
@@ -1188,6 +1199,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/videos/'
     | '/api/artifacts/$artifactId'
+    | '/api/internal/story-run'
     | '/api/jobs/$jobId'
     | '/api/oauth/$provider'
     | '/api/sandbox-generations/$jobId'
@@ -1250,6 +1262,7 @@ export interface RootRouteChildren {
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   VideosIndexRoute: typeof VideosIndexRoute
   ApiArtifactsArtifactIdRoute: typeof ApiArtifactsArtifactIdRoute
+  ApiInternalStoryRunRoute: typeof ApiInternalStoryRunRoute
   ApiOauthProviderRoute: typeof ApiOauthProviderRoute
   ApiStorageDriveRoute: typeof ApiStorageDriveRoute
 }
@@ -1872,6 +1885,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiArtifactsArtifactIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/story-run': {
+      id: '/api/internal/story-run'
+      path: '/api/internal/story-run'
+      fullPath: '/api/internal/story-run'
+      preLoaderRoute: typeof ApiInternalStoryRunRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/jobs/$jobId': {
       id: '/api/jobs/$jobId'
       path: '/$jobId'
@@ -2170,6 +2190,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIndexRoute: ProjectsIndexRoute,
   VideosIndexRoute: VideosIndexRoute,
   ApiArtifactsArtifactIdRoute: ApiArtifactsArtifactIdRoute,
+  ApiInternalStoryRunRoute: ApiInternalStoryRunRoute,
   ApiOauthProviderRoute: ApiOauthProviderRoute,
   ApiStorageDriveRoute: ApiStorageDriveRoute,
 }

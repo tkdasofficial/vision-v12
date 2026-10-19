@@ -25,6 +25,9 @@ async function sha256Hex(bytes: Uint8Array) {
   return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Thrown when this invocation's time budget is spent; the queue resumes the job in a fresh run. */
+export class StoryYield extends Error { constructor() { super("yield"); } }
+
 async function setStage(jobId: string, stage: string) {
   await d1("UPDATE runtime_jobs SET stage = ?, updated_at = ? WHERE job_id = ?", [stage, now(), jobId]);
 }
@@ -45,7 +48,9 @@ async function generateIntoSlot(
   userId: string, jobId: string, slotId: number, kind: "user_prompt" | "blueprint" | "story" | "prompt",
   messages: unknown[], maxTokens: number, call: Call,
 ): Promise<{ ok: boolean; recordId?: string; content?: string; error?: string }> {
-  const claimed = await slots.setSlotStatus(userId, jobId, slotId, "generating", {});
+  // A slot already "generating" for this job (regeneration, or resume after a yield) stays usable.
+  const claimed = await slots.setSlotStatus(userId, jobId, slotId, "generating", {})
+    || (await slots.listSlots(userId, jobId)).some((s) => s.slot_id === slotId && s.status === "generating");
   if (!claimed) return { ok: false, error: "slot_unavailable" };
   const res = await call(messages, maxTokens);
   if (!res.ok || !res.text.trim()) {
@@ -71,8 +76,26 @@ async function readValidated(userId: string, jobId: string, slotId: number): Pro
  * it stopped. Each scene prompt must score >= 90; otherwise it is regenerated once and
  * then repaired with at most SLOT_LIMITS.maxFixAttempts pointed "Fix Prompt" rounds.
  */
-export async function runCloudStoryJob(job: JobRun, prompt: string, opts: { call?: Call } = {}): Promise<void> {
-  const call = opts.call ?? defaultCall;
+export async function runCloudStoryJob(job: JobRun, prompt: string, opts: { call?: Call; deadlineAt?: number } = {}): Promise<"done" | "yield"> {
+  const deadlineAt = opts.deadlineAt ?? Number.POSITIVE_INFINITY;
+  const baseCall = opts.call ?? defaultCall;
+  // Every provider call first proves liveness (heartbeat) and checks the invocation budget,
+  // so a long job is split across queue runs instead of being killed mid-call.
+  const call: Call = async (messages, maxTokens) => {
+    if (Date.now() >= deadlineAt) throw new StoryYield();
+    await d1("UPDATE runtime_jobs SET updated_at = ? WHERE job_id = ?", [now(), job.id]);
+    return baseCall(messages, maxTokens);
+  };
+  try {
+    await runSteps(job, prompt, call);
+    return "done";
+  } catch (e) {
+    if (e instanceof StoryYield) return "yield";
+    throw e;
+  }
+}
+
+async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> {
   const userId = job.userId;
   const jobId = job.id;
   const count = parseSceneCount(prompt);
