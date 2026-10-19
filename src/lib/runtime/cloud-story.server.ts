@@ -18,8 +18,13 @@ import { parseSceneCount, sceneContract, scoreScene, assembleStoryDocument, vali
 const now = () => new Date().toISOString();
 
 type Call = (messages: unknown[], maxTokens: number) => Promise<Completion>;
-const defaultCall: Call = (messages, maxTokens) =>
-  orchestrateText(messages, { maxTokens, deep: false, signal: new AbortController().signal, taskId: "cloud-story", models: TEXT_CHAIN });
+// On the Worker: one non-streaming reply per call (fits the Free plan's CPU limit).
+// Off-Worker dev: the streaming relay, since provider keys only live on Cloudflare.
+const defaultCall: Call = async (messages, maxTokens) => {
+  const { completeOnce, onWorker } = await import("../ai/complete-once.server");
+  if (onWorker()) return completeOnce(messages, maxTokens, TEXT_CHAIN);
+  return orchestrateText(messages, { maxTokens, deep: false, signal: new AbortController().signal, taskId: "cloud-story", models: TEXT_CHAIN });
+};
 
 async function sha256Hex(bytes: Uint8Array) {
   return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -62,6 +67,12 @@ async function generateIntoSlot(
   return { ok: true, recordId, content };
 }
 
+/** Saved in-progress state of a generating slot: current candidate record and repair round. */
+function parseProgress(raw: string | null | undefined): { ref: string; round: number } | null {
+  if (!raw) return null;
+  try { const p = JSON.parse(raw); return typeof p?.ref === "string" ? { ref: p.ref, round: Number(p.round) || 0 } : null; } catch { return null; }
+}
+
 /** Reads a validated slot's record, or null when it still needs generation. */
 async function readValidated(userId: string, jobId: string, slotId: number): Promise<{ ref: string; content: string } | null> {
   const slot = (await slots.listSlots(userId, jobId)).find((s) => s.slot_id === slotId);
@@ -76,13 +87,17 @@ async function readValidated(userId: string, jobId: string, slotId: number): Pro
  * it stopped. Each scene prompt must score >= 90; otherwise it is regenerated once and
  * then repaired with at most SLOT_LIMITS.maxFixAttempts pointed "Fix Prompt" rounds.
  */
-export async function runCloudStoryJob(job: JobRun, prompt: string, opts: { call?: Call; deadlineAt?: number } = {}): Promise<"done" | "yield"> {
+export async function runCloudStoryJob(job: JobRun, prompt: string, opts: { call?: Call; deadlineAt?: number; maxCalls?: number } = {}): Promise<"done" | "yield"> {
+  const maxCalls = opts.maxCalls ?? Number.POSITIVE_INFINITY;
+  let calls = 0;
   const deadlineAt = opts.deadlineAt ?? Number.POSITIVE_INFINITY;
   const baseCall = opts.call ?? defaultCall;
   // Every provider call first proves liveness (heartbeat) and checks the invocation budget,
   // so a long job is split across queue runs instead of being killed mid-call.
   const call: Call = async (messages, maxTokens) => {
-    if (Date.now() >= deadlineAt) throw new StoryYield();
+    // Free plan: each queue run makes at most maxCalls provider calls, then hands off to a fresh run.
+    if (Date.now() >= deadlineAt || calls >= maxCalls) throw new StoryYield();
+    calls++;
     await d1("UPDATE runtime_jobs SET updated_at = ? WHERE job_id = ?", [now(), job.id]);
     return baseCall(messages, maxTokens);
   };
@@ -142,12 +157,26 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
       { role: "system", content: storyInstructions(count) + (fix.length ? ` The previous attempt had these problems: ${fix.join(" ")} Fix every one of them.` : "") },
       { role: "user", content: `Blueprint:\n${blueprint}\n\nRequest:\n${prompt}` },
     ], STORY_LIMITS.maxStoryTokens, call);
-    let r = await ask([]);
+    // Resumable: a saved first attempt (and its findings) is reused instead of regenerated.
+    const stSlot = (await slots.listSlots(userId, jobId)).find((x) => x.slot_id === 2);
+    const prog = parseProgress(stSlot?.status === "generating" ? stSlot.findings : null);
+    let r: { ok: boolean; recordId?: string; content?: string; error?: string };
+    let round = 0;
+    if (prog?.ref) {
+      const rec = await slots.readRecord(userId, prog.ref);
+      r = rec ? { ok: true, recordId: prog.ref, content: rec.content } : await ask([]);
+      round = rec ? prog.round : 0;
+    } else {
+      r = await ask([]);
+    }
     if (!r.ok) return fail(userId, jobId, `Story generation failed: ${r.error}`);
+    await slots.saveSlotProgress(userId, jobId, 2, JSON.stringify({ ref: r.recordId, round }));
     const storyIssues = checkStory(r.content!);
     if (storyIssues.length) {
+      if (round >= 1) return fail(userId, jobId, `The story did not meet its format after one regeneration: ${storyIssues.join(" ")}`);
       r = await ask(storyIssues);
       if (!r.ok) return fail(userId, jobId, `Story generation failed: ${r.error}`);
+      await slots.saveSlotProgress(userId, jobId, 2, JSON.stringify({ ref: r.recordId, round: 1 }));
       const still = checkStory(r.content!);
       if (still.length) return fail(userId, jobId, `The story did not meet its format after one regeneration: ${still.join(" ")}`);
     }
@@ -176,35 +205,44 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
     }
 
     // Generate, then score. Below 90: regenerate once, then bounded Fix Prompt rounds.
-    let gen = await generateIntoSlot(userId, jobId, slotId, "prompt", [
-      { role: "system", content: contract },
+    // Every candidate is checkpointed on the slot, so each step can run in its own queue run.
+    const sceneMsgs = (extra: string) => [
+      { role: "system", content: contract + extra },
       { role: "user", content: `Blueprint:\n${blueprint}\n\nStory:\n${story}\n\nRequest:\n${prompt}\n\nWrite scene ${i + 1} of ${count}.` },
-    ], STORY_LIMITS.maxSceneTokens, call);
-    if (!gen.ok) { failedScenes++; continue; }
-
-    let { score, issues } = scoreScene(gen.content!, i, prompt);
-    if (score < SLOT_LIMITS.passScore) {
-      // One full regeneration with the pointed findings.
-      gen = await generateIntoSlot(userId, jobId, slotId, "prompt", [
-        { role: "system", content: `${contract} The previous attempt failed these checks: ${issues.join(" ")} Fix every one of them.` },
-        { role: "user", content: `Blueprint:\n${blueprint}\n\nStory:\n${story}\n\nRequest:\n${prompt}\n\nWrite scene ${i + 1} of ${count}.` },
-      ], STORY_LIMITS.maxSceneTokens, call);
+    ];
+    const prog = parseProgress(current.status === "generating" ? current.findings : null);
+    let content = "";
+    let round = 0; // 0 = first draft, 1 = regenerated, 1 + n = after n Fix Prompt rounds
+    if (prog?.ref) {
+      const rec = await slots.readRecord(userId, prog.ref);
+      if (rec) { content = rec.content; round = prog.round; }
+    }
+    if (!content) {
+      const gen = await generateIntoSlot(userId, jobId, slotId, "prompt", sceneMsgs(""), STORY_LIMITS.maxSceneTokens, call);
       if (!gen.ok) { failedScenes++; continue; }
-      ({ score, issues } = scoreScene(gen.content!, i, prompt));
+      content = gen.content!;
+      await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref: gen.recordId, round: 0 }));
+    }
+    let { score, issues } = scoreScene(content, i, prompt);
+    if (score < SLOT_LIMITS.passScore && round === 0) {
+      // One full regeneration with the pointed findings.
+      const gen = await generateIntoSlot(userId, jobId, slotId, "prompt", sceneMsgs(` The previous attempt failed these checks: ${issues.join(" ")} Fix every one of them.`), STORY_LIMITS.maxSceneTokens, call);
+      if (!gen.ok) { failedScenes++; continue; }
+      content = gen.content!; round = 1;
+      await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref: gen.recordId, round }));
+      ({ score, issues } = scoreScene(content, i, prompt));
     }
 
-    let content = gen.content!;
-    let fixes = 0;
-    while (score < SLOT_LIMITS.passScore && fixes < SLOT_LIMITS.maxFixAttempts) {
-      fixes++;
+    while (score < SLOT_LIMITS.passScore && round - 1 < SLOT_LIMITS.maxFixAttempts) {
       const fix = await call([
         { role: "system", content: "Fix Prompt: repair the scene so it satisfies every pointed finding. Return only the corrected scene, keeping the required headings and staying consistent with the blueprint." },
         { role: "user", content: `Blueprint:\n${blueprint}\n\nPointed fixes required: ${issues.join(" ")}\n\nWrong prompt:\n${content}` },
       ], STORY_LIMITS.maxSceneTokens);
       if (!fix.ok || !fix.text.trim()) break;
-      const candidate = fix.text.trim();
-      const rescored = scoreScene(candidate, i, prompt);
-      content = candidate; score = rescored.score; issues = rescored.issues;
+      content = fix.text.trim(); round++;
+      const ref = await slots.saveRecord(userId, jobId, slotId, "prompt", content);
+      await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref, round }));
+      ({ score, issues } = scoreScene(content, i, prompt));
     }
 
     if (score >= SLOT_LIMITS.passScore) {
