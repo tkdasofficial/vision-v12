@@ -14,6 +14,11 @@ export const Route = createFileRoute("/api/jobs/$jobId")({
         const { getJob } = await import("@/lib/jobs/jobs.server");
         const job = await getJob(caller.user.id, params.jobId);
         if (!job) return Response.json({ error: "Not found." }, { status: 404 });
+        if (new URL(request.url).searchParams.get("diagnostics") === "1") {
+          const { readRuntimeDiagnostics } = await import("@/lib/runtime/diagnostics.server");
+          const diagnostics = await readRuntimeDiagnostics(caller.user.id, params.jobId);
+          return Response.json({ diagnostics }, { headers: { "Cache-Control": "no-store" } });
+        }
         return Response.json({ job }, { headers: { "Cache-Control": "no-store" } });
       },
       POST: async ({ request, params }) => {

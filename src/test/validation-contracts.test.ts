@@ -36,5 +36,8 @@ describe("runtime validation report contract", () => {
   it("rejects malformed reports", () => {
     expect(parseReport({ profile: "x" })).toBeNull();
     expect(parseReport(base)).not.toBeNull();
+    expect(parseReport({ ...base, findings: [null] })).toBeNull();
+    expect(parseReport({ ...base, findings: [{ severity: "success" }] })).toBeNull();
+    expect(parseReport({ ...base, unverified: [true] })).toBeNull();
   });
 });

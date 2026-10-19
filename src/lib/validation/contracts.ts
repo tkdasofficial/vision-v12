@@ -35,6 +35,15 @@ export function parseReport(raw: unknown): ValidationReport | null {
   if (r.status !== "passed" && r.status !== "failed" && r.status !== "unverified") return null;
   if (typeof r.contract_hash !== "string" || typeof r.artifact_hash !== "string") return null;
   if (!Array.isArray(r.findings) || !Array.isArray(r.unverified)) return null;
+  if (!r.unverified.every((item) => typeof item === "string")) return null;
+  if (!r.findings.every((item: unknown) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const f = item as Record<string, unknown>;
+    return ["code", "constraint", "message", "path"].every((key) => typeof f[key] === "string") &&
+      (f.unit === null || (typeof f.unit === "number" && Number.isInteger(f.unit) && f.unit > 0)) &&
+      (f.severity === "error" || f.severity === "warning") &&
+      Array.isArray(f.repair_scope) && f.repair_scope.every((path) => typeof path === "string");
+  })) return null;
   return r as unknown as ValidationReport;
 }
 
