@@ -57,11 +57,17 @@ export function validateScene(sceneText: string, sceneIndex: number, prompt: str
     .map((issue) => issue.replace(/^Scene \d+/, `Scene ${sceneIndex + 1}`));
 }
 
-/** Assembles the final Markdown document in order: blueprint, story, then scenes 1..N. */
-export function assembleStoryDocument(input: { title?: string; blueprint: string; story: string; scenes: string[] }): string {
+/** Per-scene score 0-100: each validation issue costs an equal share of 100. */
+export function scoreScene(sceneText: string, sceneIndex: number, prompt: string): { score: number; issues: string[] } {
+  const issues = validateScene(sceneText, sceneIndex, prompt);
+  const score = issues.length === 0 ? 100 : Math.max(0, 100 - issues.length * 25);
+  return { score, issues };
+}
+
+/** Assembles the deliverable Markdown: story, then scenes 1..N. The blueprint is never delivered. */
+export function assembleStoryDocument(input: { title?: string; story: string; scenes: string[] }): string {
   const parts: string[] = [];
   parts.push(`# ${input.title?.trim() || "Generated Story"}`);
-  if (input.blueprint.trim()) parts.push(`## Master Blueprint\n\n${input.blueprint.trim()}`);
   if (input.story.trim()) parts.push(`## Story\n\n${input.story.trim()}`);
   for (const scene of input.scenes) {
     const text = scene.trim();
