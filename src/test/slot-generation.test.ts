@@ -95,10 +95,11 @@ const okCall = (text: string) => async () => ({ ok: true as const, text, finishR
 const PROMPT_TEXT = "A prompt body that is comfortably longer than forty characters.";
 
 describe("slot pure logic", () => {
-  it("assigns slot types: 1 blueprint, 2 story, 3-100 prompt", () => {
-    expect(slotTypeFor(1)).toBe("blueprint");
+  it("assigns slot types: 1 user prompt, 2 story, 3 blueprint, 4-100 prompt", () => {
+    expect(slotTypeFor(1)).toBe("user_prompt");
     expect(slotTypeFor(2)).toBe("story");
-    expect(slotTypeFor(3)).toBe("prompt");
+    expect(slotTypeFor(3)).toBe("blueprint");
+    expect(slotTypeFor(4)).toBe("prompt");
     expect(slotTypeFor(100)).toBe("prompt");
   });
   it("caps a request at 25 prompts", () => {
@@ -126,7 +127,7 @@ describe("slot pure logic", () => {
       { slot_id: 5, slot_type: "prompt" as const, status: "free" as const },
       { slot_id: 3, slot_type: "prompt" as const, status: "free" as const },
       { slot_id: 4, slot_type: "prompt" as const, status: "claimed" as const },
-      { slot_id: 1, slot_type: "blueprint" as const, status: "free" as const },
+      { slot_id: 1, slot_type: "user_prompt" as const, status: "free" as const },
     ];
     expect(pickFreePromptSlots(snap, 2)).toEqual([3, 5]);
   });
@@ -138,8 +139,9 @@ describe("slot store (in-memory D1 semantics)", () => {
     await store.ensureSlots(db as any);
     await store.ensureSlots(db as any);
     expect(slots.size).toBe(100);
-    expect(slots.get(1).slot_type).toBe("blueprint");
+    expect(slots.get(1).slot_type).toBe("user_prompt");
     expect(slots.get(2).slot_type).toBe("story");
+    expect(slots.get(3).slot_type).toBe("blueprint");
   });
   it("claims fixed slots once; a second job cannot take them", async () => {
     const { db } = fakeDb();

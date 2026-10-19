@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSceneCount, sceneContract, sceneHeadings, validateScene, assembleStoryDocument, validateAssembled, STORY_LIMITS } from "@/lib/runtime/cloud-story";
+import { parseSceneCount, sceneContract, sceneHeadings, validateScene, scoreScene, assembleStoryDocument, validateAssembled, STORY_LIMITS } from "@/lib/runtime/cloud-story";
 
 const HORROR = "Create a horror story in exactly 5 scenes. Give me the full story plus, for each scene, a visual prompt and dialogue. Each scene must contain 25 to 30 words of dialogue. Keep the same characters, clothing and one fixed background.";
 
@@ -54,17 +54,28 @@ describe("validateScene", () => {
   });
 });
 
+describe("scoreScene", () => {
+  it("scores a fully valid scene 100", () => {
+    expect(scoreScene(sceneWith(27), 0, HORROR)).toEqual({ score: 100, issues: [] });
+  });
+  it("scores a scene with issues below the 90 pass mark", () => {
+    const { score, issues } = scoreScene(sceneWith(10), 0, HORROR);
+    expect(issues.length).toBeGreaterThan(0);
+    expect(score).toBeLessThan(90);
+  });
+});
+
 describe("assembleStoryDocument", () => {
-  it("orders blueprint, story, then scenes and passes the whole-document check", () => {
+  it("delivers story then scenes in order, never the blueprint", () => {
     const scenes = Array.from({ length: 5 }, (_, i) => sceneWith(26, i + 1));
-    const doc = assembleStoryDocument({ blueprint: "Characters: Mara.", story: "A long horror story body.", scenes });
-    expect(doc.indexOf("## Master Blueprint")).toBeLessThan(doc.indexOf("## Story"));
+    const doc = assembleStoryDocument({ story: "A long horror story body.", scenes });
+    expect(doc).not.toContain("Blueprint");
     expect(doc.indexOf("## Story")).toBeLessThan(doc.indexOf("## Scene 1"));
     expect(doc.indexOf("## Scene 1")).toBeLessThan(doc.indexOf("## Scene 5"));
     expect(validateAssembled(doc, HORROR)).toEqual([]);
   });
   it("flags a wrong scene count in the assembled document", () => {
-    const doc = assembleStoryDocument({ blueprint: "B", story: "S", scenes: [sceneWith(26, 1), sceneWith(26, 2)] });
+    const doc = assembleStoryDocument({ story: "S", scenes: [sceneWith(26, 1), sceneWith(26, 2)] });
     expect(validateAssembled(doc, HORROR).some((i) => i.includes("exactly 5"))).toBe(true);
   });
 });

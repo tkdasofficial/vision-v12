@@ -1,5 +1,5 @@
 // Slot-based prompt generation flow on the vision-sandbox D1 store:
-// blueprint (slot 1) → story (slot 2) → prompts (slots 3-100) in batches of 10,
+// original prompt (slot 1) → story (slot 2) → blueprint (slot 3) → prompts (slots 4-100) in batches of 10,
 // one validation pass, at most one repair per prompt (marked repaired_unverified,
 // never claimed as passed). Resumable: claimed/validated slots are never regenerated.
 import { orchestrateText, type Completion } from "../ai/orchestrator.server";
