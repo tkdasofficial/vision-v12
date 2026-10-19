@@ -1,5 +1,10 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
+## Current request — Diagnose, fix and retest story generation
+- [ ] Review failure evidence and current runtime; identify proven check/repair defects without weakening validation.
+- [ ] Implement focused runtime fixes and regression tests; preserve routing, providers, private evidence and exact prompt.
+- [ ] Run one authenticated normal-flow retest after fixes are active; inspect delivery/reload and independent ratings, or report unresolved failure honestly.
+
 ## Current request — One full story operation
 - [x] Submitted exact recovered Monkey/Rabbit prompt once through authenticated normal chat; SHA256 unchanged. Job 1e2acad2-381d-47f5-bd3a-9fbd4ac9bddd, chat 6484a5bb-0d16-4e54-8571-449d9d0d755c, matching GitHub run 39209884952.
 - [x] Failed after 364s: plan first candidate passed, scene checks remained unresolved after two repair rounds (units 4/6/9 flagged; final recorded failures in 4/6). Reload preserves failure; result null, zero artifacts; detailed rejected evidence unavailable. Ratings withheld. Full report: docs/story-one-operation-2026-10-19.md. No retry, source fix or deployment.
