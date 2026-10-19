@@ -32,6 +32,8 @@ async function sha256Hex(bytes: Uint8Array) {
 
 /** Thrown when this invocation's time budget is spent; the queue resumes the job in a fresh run. */
 export class StoryYield extends Error { constructor() { super("yield"); } }
+/** Thrown when another story job holds the shared slots 1-3; this job waits its turn in the queue. */
+export class StoryWait extends StoryYield {}
 
 async function setStage(jobId: string, stage: string) {
   await d1("UPDATE runtime_jobs SET stage = ?, updated_at = ? WHERE job_id = ?", [stage, now(), jobId]);
@@ -87,7 +89,7 @@ async function readValidated(userId: string, jobId: string, slotId: number): Pro
  * it stopped. Each scene prompt must score >= 90; otherwise it is regenerated once and
  * then repaired with at most SLOT_LIMITS.maxFixAttempts pointed "Fix Prompt" rounds.
  */
-export async function runCloudStoryJob(job: JobRun, prompt: string, opts: { call?: Call; deadlineAt?: number; maxCalls?: number } = {}): Promise<"done" | "yield"> {
+export async function runCloudStoryJob(job: JobRun, prompt: string, opts: { call?: Call; deadlineAt?: number; maxCalls?: number } = {}): Promise<"done" | "yield" | "wait"> {
   const maxCalls = opts.maxCalls ?? Number.POSITIVE_INFINITY;
   let calls = 0;
   const deadlineAt = opts.deadlineAt ?? Number.POSITIVE_INFINITY;
@@ -105,6 +107,7 @@ export async function runCloudStoryJob(job: JobRun, prompt: string, opts: { call
     await runSteps(job, prompt, call);
     return "done";
   } catch (e) {
+    if (e instanceof StoryWait) return "wait";
     if (e instanceof StoryYield) return "yield";
     throw e;
   }
@@ -121,7 +124,7 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
 
   // Slot 1: the user's original prompt, stored verbatim (no provider call).
   if (!(await readValidated(userId, jobId, SLOT_LIMITS.userPromptSlot))) {
-    if (!(await slots.claimFixedSlot(userId, jobId, 1))) return fail(userId, jobId, "The request slot is held by another task.");
+    if (!(await slots.claimFixedSlot(userId, jobId, 1))) throw new StoryWait();
     await slots.setSlotStatus(userId, jobId, 1, "generating", {});
     const ref = await slots.saveRecord(userId, jobId, 1, "user_prompt", prompt);
     await slots.setSlotStatus(userId, jobId, 1, "validated", { result_ref: ref });
@@ -134,7 +137,7 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
   if (bp) {
     blueprintRef = bp.ref; blueprint = bp.content;
   } else {
-    if (!(await slots.claimFixedSlot(userId, jobId, 3))) return fail(userId, jobId, "The blueprint slot is held by another task.");
+    if (!(await slots.claimFixedSlot(userId, jobId, 3))) throw new StoryWait();
     const r = await generateIntoSlot(userId, jobId, 3, "blueprint", [
       { role: "system", content: "Create a master blueprint for the requested story: setting, characters (names, appearance, clothing), rules and constraints. Concise and structured; no prose story." },
       { role: "user", content: prompt },
@@ -151,7 +154,7 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
   if (st) {
     storyRef = st.ref; story = st.content;
   } else {
-    if (!(await slots.claimFixedSlot(userId, jobId, 2))) return fail(userId, jobId, "The story slot is held by another task.");
+    if (!(await slots.claimFixedSlot(userId, jobId, 2))) throw new StoryWait();
     // Prose only: scene-formatted text here would duplicate the scene prompts in the delivery.
     const ask = (fix: string[]) => generateIntoSlot(userId, jobId, 2, "story", [
       { role: "system", content: storyInstructions(count) + (fix.length ? ` The previous attempt had these problems: ${fix.join(" ")} Fix every one of them.` : "") },

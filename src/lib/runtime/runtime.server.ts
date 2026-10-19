@@ -92,6 +92,8 @@ export const STORY_RUN_BUDGET_MS = 11 * 60_000;
 /** A running Cloudflare story job with no heartbeat for this long has stopped and is failed honestly. Longer than one 15-minute queue run plus its retry delay, so a run the queue will redeliver is never failed early. */
 /** Provider calls per queue run (Free plan: one, so each run stays within its CPU limit). */
 export const STORY_CALLS_PER_RUN = 1;
+/** Delay before a waiting story job checks again whether the shared slots are free. */
+export const STORY_WAIT_SECONDS = 30;
 export const STORY_STALE_MS = 20 * 60_000;
 
 async function releaseStorySlots(userId: string, jobId: string) {
@@ -120,7 +122,7 @@ export async function runQueuedStoryJob(jobId: string): Promise<"done" | "yield"
   const job = JobRun.restore((await d1<any>("SELECT * FROM jobs WHERE id = ?", [jobId]))[0]);
   const params = JSON.parse(rt.params || "{}");
   const { runCloudStoryJob } = await import("./cloud-story.server");
-  let outcome: "done" | "yield";
+  let outcome: "done" | "yield" | "wait";
   try {
     // Workers Free plan: one provider call per queue run keeps every run inside its CPU limit;
     // progress is checkpointed in the slots, so the next run continues exactly where this stopped.
@@ -131,10 +133,13 @@ export async function runQueuedStoryJob(jobId: string): Promise<"done" | "yield"
     await releaseStorySlots(rt.user_id, jobId);
     outcome = "done";
   }
-  if (outcome === "yield") {
+  if (outcome === "yield" || outcome === "wait") {
     const { getStoryQueue } = await import("@/lib/ai/runtime-env.server");
     const queue = getStoryQueue();
-    if (queue) { await queue.send({ jobId }); return "yield"; }
+    // Waiting for another story to free the shared slots: check again shortly (the job deadline still applies).
+    if (outcome === "wait") await job.step("queued", "Waiting for another story to finish");
+    if (queue) { await queue.send({ jobId }, outcome === "wait" ? { delaySeconds: STORY_WAIT_SECONDS } : undefined); return "yield"; }
+    if (outcome === "wait") return "yield";
     return runQueuedStoryJob(jobId);
   }
   // Deliver (or record the failure) now instead of waiting for the next browser poll.
