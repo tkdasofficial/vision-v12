@@ -1,5 +1,11 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
+## Current request — Results stuck on "Executing..."
+- [x] Root cause: story jobs ran inside request background time, which Cloudflare cuts short; dead jobs stayed "running" forever.
+- [x] Story jobs now run on Cloudflare Queue "vision-story" (worker/entry.mjs consumer, resumable 11-minute runs, heartbeat, stale jobs failed + slots freed); below-90 scene regeneration no longer rejected as "slot unavailable". Deployed with -c wrangler.toml.
+- [x] Also fixed: slot setup ran ~100 database calls per step (hit Cloudflare's per-run cap); stalled AI providers now hand over to the next; full story is prose only (was scene-formatted, broke the 5-scene check).
+- [ ] Live delivery blocked: account is on Cloudflare Workers Free; queue runs are killed for CPU time while reading long AI replies (exceededCpu). Needs Workers Paid, then add [limits] cpu_ms = 300000 and rerun the test.
+
 ## Current request — Diagnose, fix and retest story generation
 - [x] Reviewed current runtime: extractor requested room-only values while checks expect within-room spots/state; quote membership incorrectly included injected metadata; spatial repairs rewrote accepted dialogue.
 - [x] Activated focused runtime fixes at 67fc129643a784f1f83ce394e07fed43097eba18 with eight regressions. 93 tests passed; three unrelated conversion tests excluded for missing local dependencies. Providers/routing/thresholds unchanged.

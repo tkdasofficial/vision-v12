@@ -89,8 +89,8 @@ export const isCloudStoryOp = (op: string) => op === "story_generate" || op === 
 
 /** Time one queue run may spend before handing off; leaves room inside the 15-minute consumer limit for the last provider call. */
 export const STORY_RUN_BUDGET_MS = 11 * 60_000;
-/** A running Cloudflare story job with no heartbeat for this long has stopped and is failed honestly. */
-export const STORY_STALE_MS = 10 * 60_000;
+/** A running Cloudflare story job with no heartbeat for this long has stopped and is failed honestly. Longer than one 15-minute queue run plus its retry delay, so a run the queue will redeliver is never failed early. */
+export const STORY_STALE_MS = 20 * 60_000;
 
 async function releaseStorySlots(userId: string, jobId: string) {
   const { releaseJobSlots } = await import("../sandbox/slots.server");
