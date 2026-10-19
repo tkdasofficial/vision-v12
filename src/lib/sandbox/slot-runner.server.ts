@@ -4,7 +4,7 @@
 // never claimed as passed). Resumable: claimed/validated slots are never regenerated.
 import { orchestrateText, type Completion } from "../ai/orchestrator.server";
 import { TEXT_CHAIN } from "../ai/models.server";
-import { batches, checkRequestSize, repairAllowed, SLOT_LIMITS, type Slot } from "./slots";
+import { batches, checkRequestSize, SLOT_LIMITS, type Slot } from "./slots";
 import * as slots from "./slots.server";
 import type { SandboxDb } from "./db.server";
 
