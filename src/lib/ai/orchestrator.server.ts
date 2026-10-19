@@ -17,6 +17,20 @@ export function providerPolicy(status: number, reason: string): ProviderPolicy {
   if (status === 403 && /content.?policy|safety|refusal/i.test(reason)) return "input";
   return "fallback";
 }
+const STREAM_GRACE_MS = 5_000;
+
+async function withStreamDeadline<T>(work: Promise<T>, body: unknown, deadlineAt: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      try { (body as ReadableStream | undefined)?.cancel?.().catch(() => undefined); } catch { /* already closed */ }
+      reject(new Error("stream deadline reached"));
+    }, Math.max(1, deadlineAt - Date.now()));
+  });
+  try { return await Promise.race([work, expired]); }
+  finally { clearTimeout(timer); }
+}
+
 export type Completion = { ok: true; text: string; finishReason: string | null; model: ModelRef } | { ok: false; status: number; reason: string };
 
 export async function orchestrateText(messages: unknown[], opts: {
@@ -39,12 +53,22 @@ export async function orchestrateText(messages: unknown[], opts: {
     const remainingMs = deadlineAt - started;
     const reserveMs = Math.min(remainingProviders * AI_LIMITS.connectMs, remainingMs * remainingProviders / (remainingProviders + 1));
     const providerDeadlineAt = deadlineAt - reserveMs;
+    // Hard stop slightly after the provider's own deadline, never eating the next provider's reserve.
+    const hardStopAt = providerDeadlineAt + (reserveMs > 0 ? Math.min(STREAM_GRACE_MS, reserveMs / 2) : STREAM_GRACE_MS);
     let status = 502;
     let category = "empty_or_interrupted_stream";
-    const result = await call(model, messages, { maxTokens: opts.maxTokens, deep: opts.deep, deadlineAt: providerDeadlineAt, onEvent: opts.onEvent }, opts.signal);
+    // The connection phase gets the same hard stop: a transport that never answers
+    // (no headers, no error) must not hold the chain past this provider's budget share.
+    const result: ProviderResult = await withStreamDeadline(
+      call(model, messages, { maxTokens: opts.maxTokens, deep: opts.deep, deadlineAt: providerDeadlineAt, onEvent: opts.onEvent }, opts.signal),
+      undefined, hardStopAt,
+    ).catch(() => ({ ok: false as const, status: 504, reason: "provider did not respond before its deadline" }));
     if (result.ok) {
       try {
-        const output = await collectStream(result.body);
+        // Hard stop for a stream that stalls past this provider's share of the budget (some
+        // transports, e.g. the Workers AI binding, do not abort on their own), so the chain
+        // fails over instead of waiting forever.
+        const output = await withStreamDeadline(collectStream(result.body), result.body, hardStopAt);
         const text = output.text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
         if (text) {
           console.log(JSON.stringify({ tag: "[ai:orchestration]", taskId: opts.taskId, provider: model.provider, model: model.model, attempt: i + 1, outcome: "success", ms: Date.now() - started }));

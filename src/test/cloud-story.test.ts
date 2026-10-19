@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSceneCount, sceneContract, sceneHeadings, validateScene, scoreScene, assembleStoryDocument, validateAssembled, STORY_LIMITS } from "@/lib/runtime/cloud-story";
+import { checkStory, storyInstructions, parseSceneCount, sceneContract, sceneHeadings, validateScene, scoreScene, assembleStoryDocument, validateAssembled, STORY_LIMITS } from "@/lib/runtime/cloud-story";
 
 const HORROR = "Create a horror story in exactly 5 scenes. Give me the full story plus, for each scene, a visual prompt and dialogue. Each scene must contain 25 to 30 words of dialogue. Keep the same characters, clothing and one fixed background.";
 
@@ -77,5 +77,22 @@ describe("assembleStoryDocument", () => {
   it("flags a wrong scene count in the assembled document", () => {
     const doc = assembleStoryDocument({ story: "S", scenes: [sceneWith(26, 1), sceneWith(26, 2)] });
     expect(validateAssembled(doc, HORROR).some((i) => i.includes("exactly 5"))).toBe(true);
+  });
+});
+
+describe("checkStory", () => {
+  const prose = "The fog rolled over the manor while Evelyn waited. ".repeat(30);
+  it("accepts continuous prose of at least 250 words", () => {
+    expect(checkStory(prose)).toEqual([]);
+  });
+  it("rejects a story written as scene prompts", () => {
+    expect(checkStory(`## Scene 1\n\n### Visual Prompt\nA hall.\n\n### Dialogue\nEVELYN: hello\n\n${prose}`).length).toBeGreaterThan(0);
+  });
+  it("rejects a story that is too short", () => {
+    expect(checkStory("A short tale.")[0]).toContain("too short");
+  });
+  it("tells the writer to avoid scene headings", () => {
+    expect(storyInstructions(5)).toContain("all 5 story beats");
+    expect(storyInstructions(5)).toContain("Do not use headings");
   });
 });

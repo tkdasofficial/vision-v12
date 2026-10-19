@@ -65,6 +65,25 @@ export function scoreScene(sceneText: string, sceneIndex: number, prompt: string
 }
 
 /** Assembles the deliverable Markdown: story, then scenes 1..N. The blueprint is never delivered. */
+/** Instructions for the full story (slot 2): continuous prose only, never scene-formatted. */
+export function storyInstructions(count: number): string {
+  return `Write the complete story as continuous prose narrative covering all ${count} story beats in order, at least 250 words. ` +
+    "Keep characters, clothing, setting and rules exactly as in the blueprint. " +
+    "Do not use headings, scene labels or numbers, visual prompts, or dialogue blocks; the scene prompts are written separately.";
+}
+
+/** Pointed problems with a generated story; empty when it can be stored. */
+export function checkStory(text: string): string[] {
+  const issues: string[] = [];
+  if (/^\s*#{1,6}\s*(scene|visual prompt|dialogue)\b/im.test(text) || /^\s*\**\s*scene\s+\d+\b/im.test(text)) {
+    issues.push("The story must be prose without scene headings or scene labels.");
+  }
+  if (/^\s*(#{1,6}\s*)?(visual prompt|dialogue)\s*:?\s*$/im.test(text)) issues.push("The story must not contain Visual Prompt or Dialogue sections.");
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  if (words < 250) issues.push(`The story is too short (${words} words); write at least 250 words.`);
+  return issues;
+}
+
 export function assembleStoryDocument(input: { title?: string; story: string; scenes: string[] }): string {
   const parts: string[] = [];
   parts.push(`# ${input.title?.trim() || "Generated Story"}`);

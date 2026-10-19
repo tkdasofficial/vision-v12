@@ -12,13 +12,14 @@ vi.mock("@/lib/jobs/artifact-store.server", () => ({ putD1Artifact: async () => 
 
 import { runCloudStoryJob } from "@/lib/runtime/cloud-story.server";
 import { JobRun } from "@/lib/jobs/jobs.server";
+import { resetSlotSetup } from "@/lib/sandbox/slots.server";
 
 const PROMPT = "Create a horror story in exactly 2 scenes. Give me the full story plus, for each scene, a visual prompt and dialogue. Each scene must contain 25 to 30 words of dialogue. Keep one fixed background.";
 const model = { provider: "nvidia" as const, model: "m", label: "m" };
 const ok = (text: string) => ({ ok: true as const, text, finishReason: "stop", model });
 const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i + 1}`).join(" ");
 const scene = (n: number, w: number) => `## Scene ${n}\n\n### Visual Prompt\nThe same dim cabin interior, dust in the air.\n\n### Dialogue\nMARA: ${words(w)}\n`;
-const STORY = "Mara arrives at the cabin. ".repeat(40);
+const STORY = "Mara arrives at the cabin. ".repeat(60);
 
 function scripted(badFirst: Set<number>) {
   const seen = new Map<number, number>();
@@ -27,7 +28,7 @@ function scripted(badFirst: Set<number>) {
     const sys = String(messages[0].content);
     const user = String(messages[1]?.content ?? "");
     if (sys.startsWith("Create a master blueprint")) { calls.push("blueprint"); return ok("Setting: one cabin. Character: Mara, grey coat."); }
-    if (sys.startsWith("Write the full story")) { calls.push("story"); return ok(STORY); }
+    if (sys.startsWith("Write the complete story")) { calls.push("story"); return ok(STORY); }
     const n = Number(user.match(/Write scene (\d+)/)?.[1] ?? 0);
     const tries = (seen.get(n) ?? 0) + 1;
     seen.set(n, tries);
@@ -37,7 +38,7 @@ function scripted(badFirst: Set<number>) {
   return { call, calls };
 }
 
-beforeEach(() => { h.db = fakeDb().db; h.d1Calls = []; });
+beforeEach(() => { h.db = fakeDb().db; h.d1Calls = []; resetSlotSetup(); });
 
 describe("runCloudStoryJob", () => {
   it("regenerates a below-90 scene in its own slot instead of failing it", async () => {
@@ -81,10 +82,57 @@ describe("runCloudStoryJob", () => {
     expect(second.calls[0]).toBe("story");
   });
 
+  it("stays far below Cloudflare's per-run database call limit (slot setup runs once)", async () => {
+    const fake = fakeDb();
+    const seen: string[] = [];
+    h.db = (sql: string, params?: unknown[]) => { seen.push(sql); return fake.db(sql, params); };
+    const five = PROMPT.replace("exactly 2 scenes", "exactly 5 scenes");
+    const { call } = scripted(new Set([1, 3]));
+    const out = await runCloudStoryJob(new JobRun("job-limit-1", "user-1"), five, { call });
+    expect(out).toBe("done");
+    expect(seen.filter((q) => q.startsWith("INSERT OR IGNORE INTO generation_slots")).length).toBe(100);
+    expect(seen.length + h.d1Calls.length).toBeLessThan(400);
+  });
+
   it("sends a heartbeat before every provider call", async () => {
     const { call, calls } = scripted(new Set());
     await runCloudStoryJob(new JobRun("job-heartbeat-1", "user-1"), PROMPT, { call });
     const beats = h.d1Calls.filter((c) => c.sql.startsWith("UPDATE runtime_jobs SET updated_at = ?"));
     expect(beats.length).toBe(calls.length);
+  });
+});
+
+describe("full story format (slot 2)", () => {
+  it("regenerates a scene-formatted story once and delivers the prose version", async () => {
+    let storyCalls = 0;
+    const base = scripted(new Set());
+    const call = async (messages: any[]) => {
+      if (String(messages[0].content).startsWith("Write the complete story")) {
+        storyCalls++;
+        return ok(storyCalls === 1 ? scene(1, 27) : STORY);
+      }
+      return base.call(messages);
+    };
+    const out = await runCloudStoryJob(new JobRun("job-story-fmt-1", "user-1"), PROMPT, { call });
+    expect(out).toBe("done");
+    expect(storyCalls).toBe(2);
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
+  });
+
+  it("fails honestly when the story is still scene-formatted after one regeneration", async () => {
+    const base = scripted(new Set());
+    const call = async (messages: any[]) => String(messages[0].content).startsWith("Write the complete story") ? ok(scene(1, 27)) : base.call(messages);
+    await runCloudStoryJob(new JobRun("job-story-fmt-2", "user-1"), PROMPT, { call });
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(false);
+    expect(h.d1Calls.some((c) => c.sql.includes("SET status = 'failed'"))).toBe(true);
+  });
+});
+
+describe("story run timing limits", () => {
+  it("never fails a job as stalled before the queue could redeliver it", async () => {
+    const { STORY_STALE_MS, STORY_RUN_BUDGET_MS } = await import("@/lib/runtime/runtime.server");
+    const QUEUE_RUN_LIMIT_MS = 15 * 60_000;
+    expect(STORY_RUN_BUDGET_MS).toBeLessThan(QUEUE_RUN_LIMIT_MS);
+    expect(STORY_STALE_MS).toBeGreaterThan(QUEUE_RUN_LIMIT_MS);
   });
 });

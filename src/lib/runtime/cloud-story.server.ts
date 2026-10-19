@@ -13,7 +13,7 @@ import { orchestrateText, type Completion } from "../ai/orchestrator.server";
 import { TEXT_CHAIN } from "../ai/models.server";
 import * as slots from "../sandbox/slots.server";
 import { SLOT_LIMITS } from "../sandbox/slots";
-import { parseSceneCount, sceneContract, scoreScene, assembleStoryDocument, validateAssembled, STORY_LIMITS } from "./cloud-story";
+import { parseSceneCount, sceneContract, scoreScene, assembleStoryDocument, validateAssembled, storyInstructions, checkStory, STORY_LIMITS } from "./cloud-story";
 
 const now = () => new Date().toISOString();
 
@@ -137,11 +137,20 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
     storyRef = st.ref; story = st.content;
   } else {
     if (!(await slots.claimFixedSlot(userId, jobId, 2))) return fail(userId, jobId, "The story slot is held by another task.");
-    const r = await generateIntoSlot(userId, jobId, 2, "story", [
-      { role: "system", content: `Write the full story in exactly ${count} scenes, exactly following the blueprint. Keep characters, clothing, setting and rules consistent. ${contract}` },
+    // Prose only: scene-formatted text here would duplicate the scene prompts in the delivery.
+    const ask = (fix: string[]) => generateIntoSlot(userId, jobId, 2, "story", [
+      { role: "system", content: storyInstructions(count) + (fix.length ? ` The previous attempt had these problems: ${fix.join(" ")} Fix every one of them.` : "") },
       { role: "user", content: `Blueprint:\n${blueprint}\n\nRequest:\n${prompt}` },
     ], STORY_LIMITS.maxStoryTokens, call);
+    let r = await ask([]);
     if (!r.ok) return fail(userId, jobId, `Story generation failed: ${r.error}`);
+    const storyIssues = checkStory(r.content!);
+    if (storyIssues.length) {
+      r = await ask(storyIssues);
+      if (!r.ok) return fail(userId, jobId, `Story generation failed: ${r.error}`);
+      const still = checkStory(r.content!);
+      if (still.length) return fail(userId, jobId, `The story did not meet its format after one regeneration: ${still.join(" ")}`);
+    }
     storyRef = r.recordId!; story = r.content!;
     await slots.setSlotStatus(userId, jobId, 2, "validated", { result_ref: storyRef, blueprint_ref: blueprintRef });
   }

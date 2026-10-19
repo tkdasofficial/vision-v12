@@ -27,8 +27,10 @@ export default {
           headers: { [QUEUE_HEADER]: env.SIGNING_KEY, "content-type": "application/json" },
           body: JSON.stringify({ jobId }),
         }), env, ctx);
+        console.log(JSON.stringify({ tag: "[story-queue:run]", jobId, status: res.status, attempts: msg.attempts }));
         if (res.ok) msg.ack(); else msg.retry({ delaySeconds: 15 });
-      } catch {
+      } catch (e) {
+        console.error(JSON.stringify({ tag: "[story-queue:error]", jobId, error: String(e && e.message || e).slice(0, 300) }));
         msg.retry({ delaySeconds: 15 });
       }
     }

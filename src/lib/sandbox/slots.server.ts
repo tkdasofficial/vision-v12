@@ -7,25 +7,40 @@ import { canTransition, pickFreePromptSlots, slotTypeFor, SLOT_LIMITS, type Slot
 const now = () => Date.now();
 const id = () => crypto.randomUUID();
 
-/** Idempotent initialization: every statement is safe to re-run, so no caching. */
+// Initialization costs ~100 queries, and Cloudflare caps database calls per Worker run, so it
+// runs once per database handle per isolate (a failed attempt is retried on the next call).
+let ensured = new WeakMap<SandboxDb, Promise<void>>();
+
+/** Forgets completed setup (tests swap the database behind the same handle). */
+export function resetSlotSetup(): void { ensured = new WeakMap(); }
+
+/** Idempotent initialization: every statement is safe to re-run; done once per isolate. */
 export async function ensureSlots(db: SandboxDb = sandboxDb): Promise<void> {
-  await (async () => {
-    await db(`CREATE TABLE IF NOT EXISTS generation_slots (
-      slot_id INTEGER PRIMARY KEY CHECK (slot_id BETWEEN 1 AND 100),
-      slot_type TEXT NOT NULL CHECK (slot_type IN ('user_prompt','story','blueprint','prompt')),
-      user_id TEXT, job_id TEXT, prompt_index INTEGER,
-      status TEXT NOT NULL DEFAULT 'free' CHECK (status IN ('free','claimed','generating','validated','repaired_unverified','failed','cancelled')),
-      result TEXT, result_ref TEXT, blueprint_ref TEXT, story_ref TEXT, findings TEXT,
-      repair_attempts INTEGER NOT NULL DEFAULT 0, error_code TEXT, created_at INTEGER, updated_at INTEGER)`);
-    await db(`CREATE TABLE IF NOT EXISTS generation_records (
-      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, job_id TEXT NOT NULL,
-      slot_id INTEGER NOT NULL REFERENCES generation_slots(slot_id),
-      kind TEXT NOT NULL CHECK (kind IN ('user_prompt','story','blueprint','prompt')),
-      content TEXT NOT NULL, checksum TEXT, created_at INTEGER NOT NULL)`);
-    for (let s = 1; s <= SLOT_LIMITS.totalSlots; s++) {
-      await db("INSERT OR IGNORE INTO generation_slots (slot_id, slot_type) VALUES (?, ?)", [s, slotTypeFor(s)]);
-    }
-  })();
+  let pending = ensured.get(db);
+  if (!pending) {
+    pending = initSlots(db);
+    ensured.set(db, pending);
+    pending.catch(() => ensured.delete(db));
+  }
+  await pending;
+}
+
+async function initSlots(db: SandboxDb): Promise<void> {
+  await db(`CREATE TABLE IF NOT EXISTS generation_slots (
+    slot_id INTEGER PRIMARY KEY CHECK (slot_id BETWEEN 1 AND 100),
+    slot_type TEXT NOT NULL CHECK (slot_type IN ('user_prompt','story','blueprint','prompt')),
+    user_id TEXT, job_id TEXT, prompt_index INTEGER,
+    status TEXT NOT NULL DEFAULT 'free' CHECK (status IN ('free','claimed','generating','validated','repaired_unverified','failed','cancelled')),
+    result TEXT, result_ref TEXT, blueprint_ref TEXT, story_ref TEXT, findings TEXT,
+    repair_attempts INTEGER NOT NULL DEFAULT 0, error_code TEXT, created_at INTEGER, updated_at INTEGER)`);
+  await db(`CREATE TABLE IF NOT EXISTS generation_records (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, job_id TEXT NOT NULL,
+    slot_id INTEGER NOT NULL REFERENCES generation_slots(slot_id),
+    kind TEXT NOT NULL CHECK (kind IN ('user_prompt','story','blueprint','prompt')),
+    content TEXT NOT NULL, checksum TEXT, created_at INTEGER NOT NULL)`);
+  for (let s = 1; s <= SLOT_LIMITS.totalSlots; s++) {
+    await db("INSERT OR IGNORE INTO generation_slots (slot_id, slot_type) VALUES (?, ?)", [s, slotTypeFor(s)]);
+  }
 }
 
 export async function listSlots(userId: string, jobId: string, db: SandboxDb = sandboxDb): Promise<Slot[]> {
