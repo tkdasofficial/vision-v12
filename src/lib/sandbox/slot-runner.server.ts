@@ -128,7 +128,7 @@ export async function runSlotJob(userId: string, jobId: string, input: {
         continue;
       }
       // One repair attempt with the exact findings and the original prompt as context.
-      if (!repairAllowed(current)) { failed++; continue; }
+      if (current.repair_attempts >= SLOT_LIMITS.maxRepairAttempts) { failed++; continue; }
       const fix = await call([
         { role: "system", content: "Repair the prompt so it satisfies every finding. Return only the corrected prompt." },
         { role: "user", content: `Findings: ${check.findings.join(", ")}\n\nOriginal prompt:\n${gen.content}` },
