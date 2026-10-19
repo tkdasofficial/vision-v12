@@ -1,5 +1,9 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
+## Current request — One full story operation
+- [ ] Submit the exact recovered Monkey/Rabbit prompt once through authenticated normal chat; no automatic retry or deployment.
+- [ ] Inspect terminal outcome and reload, report evidence-supported failure or independently verified ratings and mandatory checks.
+
 ## Current request — Authorized end-to-end story workflow completion
 - [ ] Activate private evidence retention: app source now has runner-session writes, owner-only explicit reads, SHA-256, seven-day expiry, atomic 64-entry/4 MB job caps and migration; runtime capture/upload and live activation remain blocked on external deployment.
 - [ ] Wire shared report acceptance and lifecycle protections: malformed report parsing fixed and tested; production report gating, durable resume and coordinated budgets remain unfinished.
