@@ -53,6 +53,17 @@ export async function startRuntimeJob(job: JobRun, input: RuntimeInput): Promise
   await d1("INSERT INTO runtime_jobs (job_id, user_id, operation, params, input_key, input_name, input_mime, input_size, input_sha256, input_chunks, status, deadline, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)",
     [job.id, job.userId, op.id, JSON.stringify(params), key, noInput ? null : input.fileName, noInput ? null : input.mime, noInput ? null : input.bytes.length, hash, chunks, deadline, now(), now()]);
 
+  // Story/prompt generation runs on Cloudflare (this Worker + the vision-sandbox D1
+  // slot store), never on GitHub Actions. All other operations keep the GitHub runtime.
+  if (op.id === "story_generate" || op.id === "prompt_generate") {
+    const won = await d1("UPDATE runtime_jobs SET status = 'running', dispatched_at = ?, updated_at = ? WHERE job_id = ? AND status = 'queued' RETURNING job_id", [now(), now(), job.id]);
+    if (!won.length) return;
+    await job.step("running", "Planning the story blueprint");
+    const { runCloudStoryJob } = await import("./cloud-story.server");
+    await runCloudStoryJob(job, String(params.prompt ?? ""));
+    return;
+  }
+
   // Duplicate protection: only the request that flips queued → dispatched may call GitHub.
   const won = await d1("UPDATE runtime_jobs SET status = 'dispatched', dispatched_at = ?, updated_at = ? WHERE job_id = ? AND status = 'queued' RETURNING job_id", [now(), now(), job.id]);
   if (!won.length) return;
