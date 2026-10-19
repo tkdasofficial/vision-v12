@@ -74,7 +74,7 @@ function fakeDb() {
       if (to === "repaired_unverified") s.repair_attempts += 1;
       // apply patch params in SET order: status, updated_at, then patched keys
       const keys = ["result", "result_ref", "findings", "error_code", "blueprint_ref", "story_ref"];
-      const patchValues = params.slice(2, params.length - 3);
+      const patchValues = params.slice(2, params.length - 4);
       const setMatch = sql.match(/SET (.+) WHERE/)![1].split(",").map((p) => p.trim());
       const setKeys = setMatch.slice(2).map((p) => p.split(" ")[0]);
       setKeys.forEach((k, i) => { if (keys.includes(k)) s[k] = patchValues[i]; });
