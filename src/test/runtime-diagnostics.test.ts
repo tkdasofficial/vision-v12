@@ -25,7 +25,7 @@ describe("private runtime diagnostics", () => {
   });
   it("does not accept another operation's runner", async () => {
     const run = vi.fn();
-    const db = { prepare: vi.fn(() => ({ bind: () => ({ first: async () => ({ status: "running", session_expires: new Date(Date.now() + 60000).toISOString(), operation: "checksum" }), run }) })) };
+    const db = { prepare: vi.fn(() => ({ bind: () => ({ first: async <T,>() => ({ status: "running", session_expires: new Date(Date.now() + 60000).toISOString(), operation: "checksum" }) as T, run }) })) };
     const response = await handleRuntime(new Request("https://vision.example/runtime/diagnostics", { method: "POST", headers: { Authorization: `Bearer ${"a".repeat(64)}` }, body: "{}" }), { DB: db }, "/runtime/diagnostics");
     expect(response.status).toBe(403);
     expect(run).not.toHaveBeenCalled();
