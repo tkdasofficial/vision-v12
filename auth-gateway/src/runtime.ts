@@ -10,6 +10,7 @@
 //   POST /runtime/complete              {ok, error?, result?, output?}
 
 import { WORKFLOWS, pickWorkflow, workflowRef } from "../../src/lib/runtime/workflows";
+import { DIAGNOSTIC_LIMITS, parseDiagnostic } from "../../src/lib/runtime/diagnostics";
 
 type D1Database = { prepare(sql: string): { bind(...v: unknown[]): { first<T = any>(): Promise<T | null>; run(): Promise<unknown> } } };
 export interface RuntimeEnv { DB: D1Database }
@@ -55,7 +56,8 @@ export async function verifyGithubOidc(token: string): Promise<{ runId: string; 
   if (claims.iss !== ISSUER || claims.aud !== AUDIENCE || !(claims.exp > t) || claims.nbf > t + 60) return null;
   if (claims.repository !== REPO || !WORKFLOW_REFS.has(claims.job_workflow_ref) || claims.ref !== "refs/heads/main") return null;
   if (claims.event_name !== "workflow_dispatch" || !/^\d+$/.test(String(claims.run_id))) return null;
-  return { runId: String(claims.run_id), workflow: WORKFLOW_REFS.get(claims.job_workflow_ref)! };
+  const workflow = WORKFLOW_REFS.get(claims.job_workflow_ref);
+  return workflow ? { runId: String(claims.run_id), workflow } : null;
 }
 
 async function session(req: Request, env: RuntimeEnv): Promise<any | null> {
@@ -90,6 +92,30 @@ export async function handleRuntime(req: Request, env: RuntimeEnv, path: string)
     }
     const job = await session(req, env);
     if (!job) return json(401, { error: "invalid session" });
+    if (path === "/runtime/diagnostics" && req.method === "POST") {
+      if (job.operation !== "story_generate" && job.operation !== "prompt_generate") return json(403, { error: "diagnostics unavailable for this operation" });
+      const raw = await req.text();
+      if (enc.encode(raw).byteLength > DIAGNOSTIC_LIMITS.maxEntryBytes + 1024) return json(413, { error: "diagnostic entry too large" });
+      let value: unknown;
+      try { value = JSON.parse(raw); } catch { return json(400, { error: "invalid diagnostic entry" }); }
+      const entry = parseDiagnostic(value);
+      if (!entry) return json(400, { error: "invalid diagnostic entry" });
+      const evidence = JSON.stringify(entry.evidence);
+      const bytes = enc.encode(evidence).byteLength;
+      const time = Date.now();
+      await env.DB.prepare("DELETE FROM runtime_diagnostics WHERE rowid IN (SELECT rowid FROM runtime_diagnostics WHERE expires_at <= ? LIMIT 64)").bind(time).run();
+      // Atomic caps and identity check prevent races from exceeding storage bounds.
+      const saved = await env.DB.prepare(
+        "INSERT OR IGNORE INTO runtime_diagnostics (job_id,user_id,id,stage,evidence,sha256,bytes,created_at,expires_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM runtime_jobs WHERE job_id=? AND user_id=? AND status='running' AND session_hash=?) AND (SELECT COUNT(*) FROM runtime_diagnostics WHERE job_id=?) < ? AND (SELECT COALESCE(SUM(bytes),0) FROM runtime_diagnostics WHERE job_id=?) + ? <= ? RETURNING id",
+      ).bind(job.job_id, job.user_id, entry.id, entry.stage, evidence, await sha256(evidence), bytes, time, time + DIAGNOSTIC_LIMITS.retentionMs,
+        job.job_id, job.user_id, job.session_hash, job.job_id, DIAGNOSTIC_LIMITS.maxEntries, job.job_id, bytes, DIAGNOSTIC_LIMITS.maxJobBytes).first();
+      if (!saved) {
+        const previous = await env.DB.prepare("SELECT sha256 FROM runtime_diagnostics WHERE job_id=? AND user_id=? AND id=? AND expires_at>?").bind(job.job_id, job.user_id, entry.id, time).first();
+        if (previous?.sha256 === await sha256(evidence)) return json(200, { ok: true, duplicate: true });
+        return json(409, { error: "diagnostic storage limit reached or entry conflicts" });
+      }
+      return json(200, { ok: true, expires_at: time + DIAGNOSTIC_LIMITS.retentionMs });
+    }
     const m = path.match(/^\/runtime\/(input|output)\/(\d{1,4})$/);
     if (m && m[1] === "input" && req.method === "GET") {
       const idx = Number(m[2]);
@@ -127,7 +153,7 @@ export async function handleRuntime(req: Request, env: RuntimeEnv, path: string)
     }
     return json(404, { error: "not found" });
   } catch (e) {
-    console.error("[runtime]", (e as Error).message);
+    console.error("[runtime] relay failure", e instanceof Error ? e.name : "UnknownError");
     return json(500, { error: "relay error" });
   }
 }
