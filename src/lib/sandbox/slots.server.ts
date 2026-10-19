@@ -25,7 +25,7 @@ export async function ensureSlots(db: SandboxDb = sandboxDb): Promise<void> {
     for (let s = 1; s <= SLOT_LIMITS.totalSlots; s++) {
       await db("INSERT OR IGNORE INTO generation_slots (slot_id, slot_type) VALUES (?, ?)", [s, slotTypeFor(s)]);
     }
-  })().catch((e) => { ready = null; throw e; }));
+  })();
 }
 
 export async function listSlots(userId: string, jobId: string, db: SandboxDb = sandboxDb): Promise<Slot[]> {
