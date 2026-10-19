@@ -20,10 +20,10 @@ binding = "ASSETS"
 [vars]
 # Public origin of the deployed frontend, e.g. "https://vision.example.com".
 # Used for OAuth callbacks and absolute links; must be in ALLOWED_RETURN_ORIGINS.
-AUTH_ORIGIN = "https://id-preview--270c21c8-994a-43a9-b10c-f5ef0ab2bf73.lovable.app"
+AUTH_ORIGIN = "https://id-preview--649bac9d-0a85-403c-b17d-a735922bb57a.lovable.app"
 # Exact origins the gateway may send users back to, and the only origins whose
 # /ai relay calls are accepted (comma-separated).
-ALLOWED_RETURN_ORIGINS = "https://id-preview--270c21c8-994a-43a9-b10c-f5ef0ab2bf73.lovable.app,https://project--270c21c8-994a-43a9-b10c-f5ef0ab2bf73-dev.lovable.app,https://project--270c21c8-994a-43a9-b10c-f5ef0ab2bf73.lovable.app,https://270c21c8-994a-43a9-b10c-f5ef0ab2bf73.lovableproject.com,http://localhost:8080"
+ALLOWED_RETURN_ORIGINS = "https://id-preview--649bac9d-0a85-403c-b17d-a735922bb57a.lovable.app,https://project--649bac9d-0a85-403c-b17d-a735922bb57a-dev.lovable.app,https://project--649bac9d-0a85-403c-b17d-a735922bb57a.lovable.app,https://649bac9d-0a85-403c-b17d-a735922bb57a.lovableproject.com,http://localhost:8080"
 
 # Workers AI binding — the primary path for the Cloudflare model (no API token,
 # no REST quota). providers.server.ts relays to this Worker's /ai endpoint off-Worker.
