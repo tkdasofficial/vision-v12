@@ -48,10 +48,13 @@ export function sceneContract(prompt: string): string {
   return lines.join(" ");
 }
 
-/** Deterministic per-scene validation against the request contract. Returns issue strings. */
+/** Deterministic per-scene validation against the request contract. Returns issue strings.
+ *  The total scene count is a whole-document property, checked by validateAssembled. */
 export function validateScene(sceneText: string, sceneIndex: number, prompt: string): string[] {
   const wrapped = sceneText.replace(/^##\s*Scene\s+\d+/i, `## Scene ${sceneIndex + 1}`);
-  return validateRuntimeStory(wrapped, prompt).map((issue) => issue.replace(/^Scene \d+/, `Scene ${sceneIndex + 1}`));
+  return validateRuntimeStory(wrapped, prompt)
+    .filter((issue) => !issue.startsWith("Expected exactly"))
+    .map((issue) => issue.replace(/^Scene \d+/, `Scene ${sceneIndex + 1}`));
 }
 
 /** Assembles the final Markdown document in order: blueprint, story, then scenes 1..N. */
