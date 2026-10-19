@@ -7,10 +7,9 @@ import { canTransition, pickFreePromptSlots, slotTypeFor, SLOT_LIMITS, type Slot
 const now = () => Date.now();
 const id = () => crypto.randomUUID();
 
-let ready: Promise<unknown> | null = null;
-/** Idempotent initialization: creates tables and seeds all 100 slots once. */
-export function ensureSlots(db: SandboxDb = sandboxDb): Promise<unknown> {
-  return (ready ??= (async () => {
+/** Idempotent initialization: every statement is safe to re-run, so no caching. */
+export async function ensureSlots(db: SandboxDb = sandboxDb): Promise<void> {
+  await (async () => {
     await db(`CREATE TABLE IF NOT EXISTS generation_slots (
       slot_id INTEGER PRIMARY KEY CHECK (slot_id BETWEEN 1 AND 100),
       slot_type TEXT NOT NULL CHECK (slot_type IN ('blueprint','story','prompt')),
