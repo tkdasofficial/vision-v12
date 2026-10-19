@@ -10,8 +10,9 @@ compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
-# Build output (run `bun run build` first): server entry + static client assets.
-main = "dist/server/index.mjs"
+# Build output (run `bun run build` first): worker/entry.mjs wraps the built server
+# (dist/server/index.mjs) and adds the story Queue consumer; static client assets below.
+main = "worker/entry.mjs"
 
 [assets]
 directory = "dist/client"
@@ -42,6 +43,19 @@ database_id = "ded73090-4d47-45ac-952f-24ae2beaba5f"
 binding = "SANDBOX_DB"
 database_name = "vision-sandbox"
 database_id = "4d8098d8-e148-46ea-9e79-b4d35c148c8f"
+
+# Story generation runs as resumable Cloudflare Queue runs (never GitHub Actions).
+# One run at a time; a crashed run is redelivered and resumes from its finished slots.
+[[queues.producers]]
+queue = "vision-story"
+binding = "STORY_QUEUE"
+
+[[queues.consumers]]
+queue = "vision-story"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+max_concurrency = 1
 
 # Gmail SMTP credentials from the account Secrets Store (used by POST /mail).
 [[secrets_store_secrets]]
