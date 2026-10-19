@@ -55,12 +55,18 @@ export async function startRuntimeJob(job: JobRun, input: RuntimeInput): Promise
 
   // Story/prompt generation runs on Cloudflare (this Worker + the vision-sandbox D1
   // slot store), never on GitHub Actions. All other operations keep the GitHub runtime.
-  if (op.id === "story_generate" || op.id === "prompt_generate") {
-    const won = await d1("UPDATE runtime_jobs SET status = 'running', dispatched_at = ?, updated_at = ? WHERE job_id = ? AND status = 'queued' RETURNING job_id", [now(), now(), job.id]);
-    if (!won.length) return;
-    await job.step("running", "Planning the story blueprint");
-    const { runCloudStoryJob } = await import("./cloud-story.server");
-    await runCloudStoryJob(job, String(params.prompt ?? ""));
+  // The work itself runs in a Cloudflare Queue consumer (15-minute runs, resumed across
+  // runs), never inside this request, whose background time Cloudflare cuts short.
+  if (isCloudStoryOp(op.id)) {
+    const { getStoryQueue } = await import("@/lib/ai/runtime-env.server");
+    const queue = getStoryQueue();
+    if (queue) {
+      await job.step("queued", "Waiting for the Cloudflare story worker");
+      await queue.send({ jobId: job.id });
+      return;
+    }
+    // Off-Worker development only: run inline (still never on GitHub).
+    await runQueuedStoryJob(job.id);
     return;
   }
 
@@ -77,6 +83,59 @@ export async function startRuntimeJob(job: JobRun, input: RuntimeInput): Promise
     throw e;
   }
   await job.step("dispatched", "Waiting for a GitHub runner");
+}
+
+export const isCloudStoryOp = (op: string) => op === "story_generate" || op === "prompt_generate";
+
+/** Time one queue run may spend before handing off; leaves room inside the 15-minute consumer limit for the last provider call. */
+export const STORY_RUN_BUDGET_MS = 11 * 60_000;
+/** A running Cloudflare story job with no heartbeat for this long has stopped and is failed honestly. */
+export const STORY_STALE_MS = 10 * 60_000;
+
+async function releaseStorySlots(userId: string, jobId: string) {
+  const { releaseJobSlots } = await import("../sandbox/slots.server");
+  await releaseJobSlots(userId, jobId).catch(() => 0);
+}
+
+/**
+ * One queue run of a Cloudflare story job: claims it (queued → running), advances it within
+ * STORY_RUN_BUDGET_MS, re-queues itself when the budget is spent, and finalizes delivery to
+ * the chat as soon as the document is stored. Safe to redeliver: finished slots are reused.
+ */
+export async function runQueuedStoryJob(jobId: string): Promise<"done" | "yield" | "skipped"> {
+  const rt = (await d1<any>("SELECT * FROM runtime_jobs WHERE job_id = ?", [jobId]))[0];
+  const jobRow = (await d1<any>("SELECT * FROM jobs WHERE id = ?", [jobId]))[0];
+  if (!rt || !jobRow || !isCloudStoryOp(rt.operation)) return "skipped";
+  if (jobRow.cancel_requested) { await syncRuntimeJob(jobRow); return "skipped"; }
+  if (rt.status === "queued") {
+    const won = await d1("UPDATE runtime_jobs SET status = 'running', dispatched_at = ?, updated_at = ? WHERE job_id = ? AND status = 'queued' RETURNING job_id", [now(), now(), jobId]);
+    if (!won.length) return "skipped";
+    const job = JobRun.restore(jobRow);
+    await job.step("running", "Planning the story blueprint");
+  } else if (rt.status !== "running") {
+    return "skipped";
+  }
+  const job = JobRun.restore((await d1<any>("SELECT * FROM jobs WHERE id = ?", [jobId]))[0]);
+  const params = JSON.parse(rt.params || "{}");
+  const { runCloudStoryJob } = await import("./cloud-story.server");
+  let outcome: "done" | "yield";
+  try {
+    outcome = await runCloudStoryJob(job, String(params.prompt ?? ""), { deadlineAt: Date.now() + STORY_RUN_BUDGET_MS });
+  } catch (e) {
+    await d1("UPDATE runtime_jobs SET status = 'failed', error = ?, updated_at = ? WHERE job_id = ? AND status IN ('queued','running')", [safeError(e), now(), jobId]);
+    await releaseStorySlots(rt.user_id, jobId);
+    outcome = "done";
+  }
+  if (outcome === "yield") {
+    const { getStoryQueue } = await import("@/lib/ai/runtime-env.server");
+    const queue = getStoryQueue();
+    if (queue) { await queue.send({ jobId }); return "yield"; }
+    return runQueuedStoryJob(jobId);
+  }
+  // Deliver (or record the failure) now instead of waiting for the next browser poll.
+  const fresh = (await d1<any>("SELECT * FROM jobs WHERE id = ?", [jobId]))[0];
+  if (fresh) await syncRuntimeJob(fresh);
+  return "done";
 }
 
 const STAGE_STEP: Record<string, ["running" | "validating" | "processing" | "verifying" | "uploading", string]> = {
@@ -110,6 +169,7 @@ export async function syncRuntimeJob(jobRow: any): Promise<boolean> {
     const flip = await d1("UPDATE runtime_jobs SET status = 'cancelled', session_hash = NULL, updated_at = ? WHERE job_id = ? AND status IN ('queued','dispatched','running') RETURNING run_id", [now(), rt.job_id]);
     if (flip.length) {
       if (flip[0].run_id) await (await import("./github.server")).cancelRun(flip[0].run_id);
+      if (isCloudStoryOp(rt.operation)) await releaseStorySlots(rt.user_id, rt.job_id);
       await job.cancelled();
       return true;
     }
@@ -120,7 +180,19 @@ export async function syncRuntimeJob(jobRow: any): Promise<boolean> {
     const flip = await d1("UPDATE runtime_jobs SET status = 'timed_out', session_hash = NULL, updated_at = ? WHERE job_id = ? AND status IN ('queued','dispatched','running') RETURNING run_id", [now(), rt.job_id]);
     if (flip.length) {
       if (flip[0].run_id) await (await import("./github.server")).cancelRun(flip[0].run_id);
+      if (isCloudStoryOp(rt.operation)) await releaseStorySlots(rt.user_id, rt.job_id);
       await job.timedOut(rt.status === "running" ? "The runner did not finish in time and was stopped." : "No GitHub runner picked up the task in time.");
+      return true;
+    }
+  }
+
+  // A Cloudflare story run heartbeats before every provider call; silence means it stopped.
+  if (isCloudStoryOp(rt.operation) && rt.status === "running" && Date.now() - Date.parse(rt.updated_at) > STORY_STALE_MS) {
+    const flip = await d1("UPDATE runtime_jobs SET status = 'failed', error = ?, updated_at = ? WHERE job_id = ? AND status = 'running' AND updated_at = ? RETURNING job_id",
+      ["The story worker stopped responding.", now(), rt.job_id, rt.updated_at]);
+    if (flip.length) {
+      await releaseStorySlots(rt.user_id, rt.job_id);
+      await job.fail(new Error("The story worker stopped responding. Please try again."));
       return true;
     }
   }
