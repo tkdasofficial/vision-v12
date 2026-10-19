@@ -44,7 +44,7 @@ export function batches(count: number, batchSize: number = SLOT_LIMITS.batchSize
 const TRANSITIONS: Record<SlotStatus, SlotStatus[]> = {
   free: ["claimed"],
   claimed: ["generating", "free", "cancelled"],
-  generating: ["validated", "failed", "cancelled", "claimed"],
+  generating: ["validated", "repaired_unverified", "failed", "cancelled", "claimed"],
   validated: ["free"],
   repaired_unverified: ["free"],
   failed: ["claimed", "free"],
