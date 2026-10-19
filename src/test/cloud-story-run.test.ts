@@ -175,3 +175,18 @@ describe("scene repair keeps the best version", () => {
     expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
   });
 });
+
+describe("one story at a time", () => {
+  it("makes a second story wait (not fail) while another holds the shared slots, then run once they are free", async () => {
+    const a = new JobRun("job-first-01", "user-1");
+    const b = new JobRun("job-second-1", "user-2");
+    const s = scripted(new Set());
+    expect(await runCloudStoryJob(a, PROMPT, { call: s.call, maxCalls: 1 })).toBe("yield");
+    expect(await runCloudStoryJob(b, PROMPT, { call: s.call })).toBe("wait");
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'failed'"))).toBe(false);
+    expect(await runCloudStoryJob(a, PROMPT, { call: s.call })).toBe("done");
+    const { releaseJobSlots } = await import("@/lib/sandbox/slots.server");
+    await releaseJobSlots("user-1", "job-first-01");
+    expect(await runCloudStoryJob(b, PROMPT, { call: s.call })).toBe("done");
+  });
+});
