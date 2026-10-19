@@ -1,15 +1,22 @@
 // Pure slot-allocation logic for the 100-slot generation system. No I/O.
+// Layout: slot 1 = user's original prompt, slot 2 = story, slot 3 = blueprint,
+// slots 4-100 = generated prompts (1..97 per request, capped at 25).
 export const SLOT_LIMITS = {
   totalSlots: 100,
-  blueprintSlot: 1,
+  userPromptSlot: 1,
   storySlot: 2,
-  firstPromptSlot: 3,
+  blueprintSlot: 3,
+  firstPromptSlot: 4,
   maxPromptsPerRequest: 25,
   batchSize: 10,
   maxRepairAttempts: 1,
+  /** A prompt passes validation at or above this score (0-100). */
+  passScore: 90,
+  /** Bounded "Fix Prompt" rounds per prompt after the first regeneration. */
+  maxFixAttempts: 3,
 } as const;
 
-export type SlotType = "blueprint" | "story" | "prompt";
+export type SlotType = "user_prompt" | "story" | "blueprint" | "prompt";
 export type SlotStatus = "free" | "claimed" | "generating" | "validated" | "repaired_unverified" | "failed" | "cancelled";
 export type Slot = {
   slot_id: number; slot_type: SlotType; user_id: string | null; job_id: string | null;
@@ -19,12 +26,13 @@ export type Slot = {
 };
 
 export function slotTypeFor(slotId: number): SlotType {
-  if (slotId === SLOT_LIMITS.blueprintSlot) return "blueprint";
+  if (slotId === SLOT_LIMITS.userPromptSlot) return "user_prompt";
   if (slotId === SLOT_LIMITS.storySlot) return "story";
+  if (slotId === SLOT_LIMITS.blueprintSlot) return "blueprint";
   return "prompt";
 }
 
-/** Capacity check: prompt slots are 3..100, so at most 98 prompts — but a request is capped at 25. */
+/** Capacity check: prompt slots are 4..100 (97 slots); a request is capped at 25. */
 export function checkRequestSize(count: number): { ok: true } | { ok: false; reason: string } {
   if (!Number.isInteger(count) || count < 1) return { ok: false, reason: "Prompt count must be a positive integer." };
   if (count > SLOT_LIMITS.maxPromptsPerRequest) return { ok: false, reason: `A request may ask for at most ${SLOT_LIMITS.maxPromptsPerRequest} prompts.` };

@@ -12,7 +12,7 @@ export async function ensureSlots(db: SandboxDb = sandboxDb): Promise<void> {
   await (async () => {
     await db(`CREATE TABLE IF NOT EXISTS generation_slots (
       slot_id INTEGER PRIMARY KEY CHECK (slot_id BETWEEN 1 AND 100),
-      slot_type TEXT NOT NULL CHECK (slot_type IN ('blueprint','story','prompt')),
+      slot_type TEXT NOT NULL CHECK (slot_type IN ('user_prompt','story','blueprint','prompt')),
       user_id TEXT, job_id TEXT, prompt_index INTEGER,
       status TEXT NOT NULL DEFAULT 'free' CHECK (status IN ('free','claimed','generating','validated','repaired_unverified','failed','cancelled')),
       result TEXT, result_ref TEXT, blueprint_ref TEXT, story_ref TEXT, findings TEXT,
@@ -20,7 +20,7 @@ export async function ensureSlots(db: SandboxDb = sandboxDb): Promise<void> {
     await db(`CREATE TABLE IF NOT EXISTS generation_records (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, job_id TEXT NOT NULL,
       slot_id INTEGER NOT NULL REFERENCES generation_slots(slot_id),
-      kind TEXT NOT NULL CHECK (kind IN ('blueprint','story','prompt')),
+      kind TEXT NOT NULL CHECK (kind IN ('user_prompt','story','blueprint','prompt')),
       content TEXT NOT NULL, checksum TEXT, created_at INTEGER NOT NULL)`);
     for (let s = 1; s <= SLOT_LIMITS.totalSlots; s++) {
       await db("INSERT OR IGNORE INTO generation_slots (slot_id, slot_type) VALUES (?, ?)", [s, slotTypeFor(s)]);
@@ -33,8 +33,8 @@ export async function listSlots(userId: string, jobId: string, db: SandboxDb = s
   return db("SELECT * FROM generation_slots WHERE user_id = ? AND job_id = ? ORDER BY slot_id", [userId, jobId]);
 }
 
-/** Atomically claims the blueprint/story slot for a job; false when another job holds it. */
-export async function claimFixedSlot(userId: string, jobId: string, slotId: 1 | 2, db: SandboxDb = sandboxDb): Promise<boolean> {
+/** Atomically claims a fixed slot (1 user prompt, 2 story, 3 blueprint); false when another job holds it. */
+export async function claimFixedSlot(userId: string, jobId: string, slotId: 1 | 2 | 3, db: SandboxDb = sandboxDb): Promise<boolean> {
   await ensureSlots(db);
   const rows = await db(
     "UPDATE generation_slots SET user_id = ?, job_id = ?, status = 'claimed', updated_at = ? WHERE slot_id = ? AND (status = 'free' OR (user_id = ? AND job_id = ?)) RETURNING slot_id",
@@ -78,7 +78,7 @@ export async function setSlotStatus(userId: string, jobId: string, slotId: numbe
 }
 
 /** Stores a large body in generation_records and points the slot at it. */
-export async function saveRecord(userId: string, jobId: string, slotId: number, kind: "blueprint" | "story" | "prompt", content: string, db: SandboxDb = sandboxDb): Promise<string> {
+export async function saveRecord(userId: string, jobId: string, slotId: number, kind: "user_prompt" | "blueprint" | "story" | "prompt", content: string, db: SandboxDb = sandboxDb): Promise<string> {
   await ensureSlots(db);
   const recId = id();
   const buf = new TextEncoder().encode(content);

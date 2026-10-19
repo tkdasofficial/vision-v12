@@ -1,5 +1,5 @@
 // Slot-based prompt generation flow on the vision-sandbox D1 store:
-// blueprint (slot 1) → story (slot 2) → prompts (slots 3-100) in batches of 10,
+// original prompt (slot 1) → story (slot 2) → blueprint (slot 3) → prompts (slots 4-100) in batches of 10,
 // one validation pass, at most one repair per prompt (marked repaired_unverified,
 // never claimed as passed). Resumable: claimed/validated slots are never regenerated.
 import { orchestrateText, type Completion } from "../ai/orchestrator.server";
@@ -65,22 +65,30 @@ export async function runSlotJob(userId: string, jobId: string, input: {
   let story = "";
 
   if (isStory) {
-    // Slot 1: Master Blueprint. Slot 2: Story. Resume skips slots already done.
+    // Slot 1: original instructions. Slot 2: Story. Slot 3: Master Blueprint.
+    // Resume skips slots already done.
     const existing = await slots.listSlots(userId, jobId, db);
+    const up = existing.find((s) => s.slot_id === SLOT_LIMITS.userPromptSlot);
+    if (up?.status !== "validated") {
+      if (!(await slots.claimFixedSlot(userId, jobId, 1, db))) return { status: "failed", validated: 0, repaired: 0, failed: 0, error: "request slot unavailable" };
+      await slots.setSlotStatus(userId, jobId, 1, "generating", {}, db);
+      const ref = await slots.saveRecord(userId, jobId, 1, "user_prompt", input.instructions, db);
+      await slots.setSlotStatus(userId, jobId, 1, "validated", { result_ref: ref }, db);
+    }
     const bp = existing.find((s) => s.slot_id === SLOT_LIMITS.blueprintSlot);
     const st = existing.find((s) => s.slot_id === SLOT_LIMITS.storySlot);
     if (bp?.status === "validated" && bp.result_ref) {
       blueprintRef = bp.result_ref;
       blueprint = (await slots.readRecord(userId, bp.result_ref, db))?.content ?? "";
     } else {
-      if (!(await slots.claimFixedSlot(userId, jobId, 1, db))) return { status: "failed", validated: 0, repaired: 0, failed: 0, error: "blueprint slot unavailable" };
-      const r = await generateIntoSlot(userId, jobId, 1, "blueprint", [
+      if (!(await slots.claimFixedSlot(userId, jobId, 3, db))) return { status: "failed", validated: 0, repaired: 0, failed: 0, error: "blueprint slot unavailable" };
+      const r = await generateIntoSlot(userId, jobId, 3, "blueprint", [
         { role: "system", content: "Create a master blueprint for the requested work: setting, characters, rules and constraints. Concise, structured, no prose story." },
         { role: "user", content: input.instructions },
       ], 1200, call, signal, db);
       if (!r.ok) return { status: "failed", validated: 0, repaired: 0, failed: 0, error: `blueprint: ${r.error}` };
       blueprintRef = r.recordId!; blueprint = r.content!;
-      await slots.setSlotStatus(userId, jobId, 1, "validated", { result_ref: blueprintRef }, db);
+      await slots.setSlotStatus(userId, jobId, 3, "validated", { result_ref: blueprintRef }, db);
     }
     if (st?.status === "validated" && st.result_ref) {
       storyRef = st.result_ref;
