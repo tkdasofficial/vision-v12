@@ -62,17 +62,23 @@ describe("runCloudStoryJob", () => {
   it("resumes after a yield without regenerating finished work", async () => {
     const job = new JobRun("job-resume-1", "user-1");
     const first = scripted(new Set());
-    // Budget runs out right after the blueprint call.
-    let budget = Date.now() + 60_000;
-    const callThenExpire = async (m: any[], t: number) => { const r = await first.call(m); budget = Date.now() - 1; return r; };
-    const out1 = await runCloudStoryJob(job, PROMPT, { call: callThenExpire as any, get deadlineAt() { return budget; } } as any);
-    // deadlineAt is read once per run, so the run continues; simulate the hand-off explicitly instead.
-    expect(["done", "yield"]).toContain(out1);
+    const realNow = Date.now.bind(Date);
+    const start = realNow();
+    // The run budget expires right after the blueprint call returns.
+    const expireAfterBlueprint = async (m: any[]) => {
+      const r = await first.call(m);
+      vi.spyOn(Date, "now").mockImplementation(() => start + 60_000);
+      return r;
+    };
+    const out1 = await runCloudStoryJob(job, PROMPT, { call: expireAfterBlueprint as any, deadlineAt: start + 30_000 });
+    vi.restoreAllMocks();
+    expect(out1).toBe("yield");
+    expect(first.calls).toEqual(["blueprint"]);
     const second = scripted(new Set());
     const out2 = await runCloudStoryJob(job, PROMPT, { call: second.call });
     expect(out2).toBe("done");
     expect(second.calls).not.toContain("blueprint");
-    expect(second.calls).not.toContain("story");
+    expect(second.calls[0]).toBe("story");
   });
 
   it("sends a heartbeat before every provider call", async () => {
