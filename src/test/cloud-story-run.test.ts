@@ -153,3 +153,25 @@ describe("Workers Free plan: one provider call per queue run", () => {
     expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
   });
 });
+
+describe("scene repair keeps the best version", () => {
+  it("accepts a scene whose only flaw is a missing scene heading", async () => {
+    const { normalizeScene, scoreScene } = await import("@/lib/runtime/cloud-story");
+    const body = scene(1, 27).replace("## Scene 1\n\n", "");
+    expect(scoreScene(normalizeScene(body, 0), 0, PROMPT).score).toBe(100);
+  });
+
+  it("never lets a worse rewrite replace a better draft", async () => {
+    const base = scripted(new Set());
+    let s1 = 0;
+    const call = async (messages: any[]) => {
+      const user = String(messages[1]?.content ?? "");
+      if (/Write scene 1 of/.test(user)) { s1++; return ok(scene(1, 8)); } // short dialogue: one issue
+      if (String(messages[0].content).startsWith("Fix Prompt") && /Scene 1/.test(user)) return ok(s1++ === 2 ? "| table | only |" : scene(1, 27));
+      return base.call(messages);
+    };
+    const out = await runCloudStoryJob(new JobRun("job-best-1", "user-1"), PROMPT, { call });
+    expect(out).toBe("done");
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
+  });
+});
