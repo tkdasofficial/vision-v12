@@ -1,5 +1,11 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
+## Current request — Diagnose, fix and retest story generation
+- [x] Reviewed current runtime: extractor requested room-only values while checks expect within-room spots/state; quote membership incorrectly included injected metadata; spatial repairs rewrote accepted dialogue.
+- [x] Activated focused runtime fixes at 67fc129643a784f1f83ce394e07fed43097eba18 with eight regressions. 93 tests passed; three unrelated conversion tests excluded for missing local dependencies. Providers/routing/thresholds unchanged.
+- [x] One unchanged-prompt authenticated retest: job 248c2bd5-1302-42f7-adb6-0ad0dededc4a, chat bf27db17-0846-4aaf-80aa-df5ab3d59220, matching GitHub run 39211113962. Failed after 525s at internal audit 89% < required 90%; no output, reload preserves failure. Independent ratings unavailable.
+- [ ] Full functional success remains blocked on unavailable rejected-scene/audit evidence and unresolved audit/repair failures; do not claim completion or lower the 90% bar. Two attempts remain in the original five-attempt budget. Further work requires diagnostic activation through external app deployment; no app deployment performed.
+
 ## Current request — One full story operation
 - [x] Submitted exact recovered Monkey/Rabbit prompt once through authenticated normal chat; SHA256 unchanged. Job 1e2acad2-381d-47f5-bd3a-9fbd4ac9bddd, chat 6484a5bb-0d16-4e54-8571-449d9d0d755c, matching GitHub run 39209884952.
 - [x] Failed after 364s: plan first candidate passed, scene checks remained unresolved after two repair rounds (units 4/6/9 flagged; final recorded failures in 4/6). Reload preserves failure; result null, zero artifacts; detailed rejected evidence unavailable. Ratings withheld. Full report: docs/story-one-operation-2026-10-19.md. No retry, source fix or deployment.
