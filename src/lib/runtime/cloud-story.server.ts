@@ -13,7 +13,7 @@ import { orchestrateText, type Completion } from "../ai/orchestrator.server";
 import { TEXT_CHAIN } from "../ai/models.server";
 import * as slots from "../sandbox/slots.server";
 import { SLOT_LIMITS } from "../sandbox/slots";
-import { parseSceneCount, sceneContract, scoreScene, assembleStoryDocument, validateAssembled, storyInstructions, checkStory, STORY_LIMITS } from "./cloud-story";
+import { normalizeScene, parseSceneCount, sceneContract, scoreScene, assembleStoryDocument, validateAssembled, storyInstructions, checkStory, STORY_LIMITS } from "./cloud-story";
 
 const now = () => new Date().toISOString();
 
@@ -215,12 +215,12 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
     let round = 0; // 0 = first draft, 1 = regenerated, 1 + n = after n Fix Prompt rounds
     if (prog?.ref) {
       const rec = await slots.readRecord(userId, prog.ref);
-      if (rec) { content = rec.content; round = prog.round; }
+      if (rec) { content = normalizeScene(rec.content, i); round = prog.round; }
     }
     if (!content) {
       const gen = await generateIntoSlot(userId, jobId, slotId, "prompt", sceneMsgs(""), STORY_LIMITS.maxSceneTokens, call);
       if (!gen.ok) { failedScenes++; continue; }
-      content = gen.content!;
+      content = normalizeScene(gen.content!, i);
       await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref: gen.recordId, round: 0 }));
     }
     let { score, issues } = scoreScene(content, i, prompt);
@@ -228,9 +228,13 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
       // One full regeneration with the pointed findings.
       const gen = await generateIntoSlot(userId, jobId, slotId, "prompt", sceneMsgs(` The previous attempt failed these checks: ${issues.join(" ")} Fix every one of them.`), STORY_LIMITS.maxSceneTokens, call);
       if (!gen.ok) { failedScenes++; continue; }
-      content = gen.content!; round = 1;
-      await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref: gen.recordId, round }));
-      ({ score, issues } = scoreScene(content, i, prompt));
+      round = 1;
+      const candidate = normalizeScene(gen.content!, i);
+      const rescored = scoreScene(candidate, i, prompt);
+      // Keep whichever version scores higher; a worse rewrite never replaces a better draft.
+      if (rescored.score >= score) { content = candidate; ({ score, issues } = rescored); }
+      const ref = rescored.score >= score && gen.recordId ? gen.recordId : prog?.ref ?? gen.recordId;
+      await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref: void ref ?? await slots.saveRecord(userId, jobId, slotId, "prompt", content), round }));
     }
 
     while (score < SLOT_LIMITS.passScore && round - 1 < SLOT_LIMITS.maxFixAttempts) {
@@ -239,10 +243,12 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
         { role: "user", content: `Blueprint:\n${blueprint}\n\nPointed fixes required: ${issues.join(" ")}\n\nWrong prompt:\n${content}` },
       ], STORY_LIMITS.maxSceneTokens);
       if (!fix.ok || !fix.text.trim()) break;
-      content = fix.text.trim(); round++;
+      round++;
+      const candidate = normalizeScene(fix.text, i);
+      const rescored = scoreScene(candidate, i, prompt);
+      if (rescored.score >= score) { content = candidate; ({ score, issues } = rescored); }
       const ref = await slots.saveRecord(userId, jobId, slotId, "prompt", content);
       await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref, round }));
-      ({ score, issues } = scoreScene(content, i, prompt));
     }
 
     if (score >= SLOT_LIMITS.passScore) {
