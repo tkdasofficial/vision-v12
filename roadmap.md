@@ -1,5 +1,11 @@
 # Roadmap — Memory, Output Control, Artifacts & Activity Tracking
 
+## Current request — Five-attempt live story improvement loop
+- [x] Authenticated and recovered the exact prompt from latest failed chat c142cb99/run 39190584448; composer equality verified before submission.
+- [ ] Remaining four attempts blocked: attempt 1 job 072aa505/run 39196017653 failed scene-five prop verification after two repairs (320s); rejected scenes/extraction/repair evidence were deleted and no private diagnostic transport is active. Scores cannot be independently calculated.
+- [ ] Evidence-confirmed generation fix/regression/retest waits on retained raw evidence; activating an owner-private bounded diagnostic transport needs Cloudflare deployment authorization. No blind retry, speculative fix, provider/security/config change or deployment performed.
+- [x] Reported rubric, mandatory gates, identifiers and limitations in docs/story-live-testing-2026-10-19.md. 54 existing story/validator tests passed; reload restores failure, not a story. Completion criteria unmet.
+
 ## Current request — Structured output inside Markdown
 - [x] Enable callouts, flows, tables and safe links in Markdown boxes and expanded view.
 - [x] 88 focused tests passed; automatic build OK. Browser fixture renders callout, table, flow, checklist and math; expanded rows preserved, screenshot inspected, no page errors. No new AI generation or deployment.
