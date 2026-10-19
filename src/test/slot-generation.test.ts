@@ -64,8 +64,8 @@ function fakeDb() {
     }
     if (sql.startsWith("UPDATE generation_slots SET status = ?")) {
       const to = params[0] as string;
-      const slot_id = params[params.length - 3] as number;
-      const user_id = params[params.length - 2] as string;
+      const slot_id = params[params.length - 4] as number;
+      const user_id = params[params.length - 3] as string;
       const from = params[params.length - 1] as string;
       const s = slots.get(slot_id);
       if (!s || s.user_id !== user_id || s.status !== from) return [];
