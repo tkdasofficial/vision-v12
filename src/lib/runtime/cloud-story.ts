@@ -57,6 +57,12 @@ export function validateScene(sceneText: string, sceneIndex: number, prompt: str
     .map((issue) => issue.replace(/^Scene \d+/, `Scene ${sceneIndex + 1}`));
 }
 
+/** Adds the runner-owned "## Scene N" heading when the writer omitted it; strips code fences. Content is untouched. */
+export function normalizeScene(sceneText: string, sceneIndex: number): string {
+  const t = sceneText.trim().replace(/^```[a-z]*\n([\s\S]*?)\n```$/i, "$1").trim();
+  return /^##\s*Scene\s+\d+/i.test(t) ? t : `## Scene ${sceneIndex + 1}\n\n${t}`;
+}
+
 /** Per-scene score 0-100: each validation issue costs an equal share of 100. */
 export function scoreScene(sceneText: string, sceneIndex: number, prompt: string): { score: number; issues: string[] } {
   const issues = validateScene(sceneText, sceneIndex, prompt);

@@ -90,6 +90,10 @@ export const isCloudStoryOp = (op: string) => op === "story_generate" || op === 
 /** Time one queue run may spend before handing off; leaves room inside the 15-minute consumer limit for the last provider call. */
 export const STORY_RUN_BUDGET_MS = 11 * 60_000;
 /** A running Cloudflare story job with no heartbeat for this long has stopped and is failed honestly. Longer than one 15-minute queue run plus its retry delay, so a run the queue will redeliver is never failed early. */
+/** Provider calls per queue run (Free plan: one, so each run stays within its CPU limit). */
+export const STORY_CALLS_PER_RUN = 1;
+/** Delay before a waiting story job checks again whether the shared slots are free. */
+export const STORY_WAIT_SECONDS = 30;
 export const STORY_STALE_MS = 20 * 60_000;
 
 async function releaseStorySlots(userId: string, jobId: string) {
@@ -118,23 +122,32 @@ export async function runQueuedStoryJob(jobId: string): Promise<"done" | "yield"
   const job = JobRun.restore((await d1<any>("SELECT * FROM jobs WHERE id = ?", [jobId]))[0]);
   const params = JSON.parse(rt.params || "{}");
   const { runCloudStoryJob } = await import("./cloud-story.server");
-  let outcome: "done" | "yield";
+  let outcome: "done" | "yield" | "wait";
   try {
-    outcome = await runCloudStoryJob(job, String(params.prompt ?? ""), { deadlineAt: Date.now() + STORY_RUN_BUDGET_MS });
+    // Workers Free plan: one provider call per queue run keeps every run inside its CPU limit;
+    // progress is checkpointed in the slots, so the next run continues exactly where this stopped.
+    const { getStoryQueue: q } = await import("@/lib/ai/runtime-env.server");
+    outcome = await runCloudStoryJob(job, String(params.prompt ?? ""), { deadlineAt: Date.now() + STORY_RUN_BUDGET_MS, maxCalls: q() ? STORY_CALLS_PER_RUN : undefined });
   } catch (e) {
     await d1("UPDATE runtime_jobs SET status = 'failed', error = ?, updated_at = ? WHERE job_id = ? AND status IN ('queued','running')", [safeError(e), now(), jobId]);
     await releaseStorySlots(rt.user_id, jobId);
     outcome = "done";
   }
-  if (outcome === "yield") {
+  if (outcome === "yield" || outcome === "wait") {
     const { getStoryQueue } = await import("@/lib/ai/runtime-env.server");
     const queue = getStoryQueue();
-    if (queue) { await queue.send({ jobId }); return "yield"; }
+    // Waiting for another story to free the shared slots: check again shortly (the job deadline still applies).
+    if (outcome === "wait") await job.step("queued", "Waiting for another story to finish");
+    if (queue) { await queue.send({ jobId }, outcome === "wait" ? { delaySeconds: STORY_WAIT_SECONDS } : undefined); return "yield"; }
+    if (outcome === "wait") return "yield";
     return runQueuedStoryJob(jobId);
   }
   // Deliver (or record the failure) now instead of waiting for the next browser poll.
   const fresh = (await d1<any>("SELECT * FROM jobs WHERE id = ?", [jobId]))[0];
   if (fresh) await syncRuntimeJob(fresh);
+  // vision-sandbox is temporary: once the result is delivered (or the job ended), free its slots for the next story.
+  const end = (await d1<any>("SELECT status FROM runtime_jobs WHERE job_id = ?", [jobId]))[0];
+  if (end && !["queued", "dispatched", "running"].includes(end.status)) await releaseStorySlots(rt.user_id, jobId);
   return "done";
 }
 

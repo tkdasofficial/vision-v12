@@ -136,3 +136,57 @@ describe("story run timing limits", () => {
     expect(STORY_STALE_MS).toBeGreaterThan(QUEUE_RUN_LIMIT_MS);
   });
 });
+
+describe("Workers Free plan: one provider call per queue run", () => {
+  it("finishes a job across many single-call runs without repeating finished work", async () => {
+    const { STORY_CALLS_PER_RUN } = await import("@/lib/runtime/runtime.server");
+    expect(STORY_CALLS_PER_RUN).toBe(1);
+    const job = new JobRun("job-onecall-1", "user-1");
+    const s = scripted(new Set([2]));
+    let out: "done" | "yield" | "wait" = "yield";
+    let runs = 0;
+    while (out === "yield" && runs < 30) { runs++; out = await runCloudStoryJob(job, PROMPT, { call: s.call, maxCalls: 1 }); }
+    expect(out).toBe("done");
+    // blueprint, story, scene1, scene2 draft, scene2 regeneration — each exactly once.
+    expect(s.calls).toEqual(["blueprint", "story", "scene1#1", "scene2#1", "scene2#2"]);
+    expect(runs).toBe(s.calls.length);
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
+  });
+});
+
+describe("scene repair keeps the best version", () => {
+  it("accepts a scene whose only flaw is a missing scene heading", async () => {
+    const { normalizeScene, scoreScene } = await import("@/lib/runtime/cloud-story");
+    const body = scene(1, 27).replace("## Scene 1\n\n", "");
+    expect(scoreScene(normalizeScene(body, 0), 0, PROMPT).score).toBe(100);
+  });
+
+  it("never lets a worse rewrite replace a better draft", async () => {
+    const base = scripted(new Set());
+    let s1 = 0;
+    const call = async (messages: any[]) => {
+      const user = String(messages[1]?.content ?? "");
+      if (/Write scene 1 of/.test(user)) { s1++; return ok(scene(1, 8)); } // short dialogue: one issue
+      if (String(messages[0].content).startsWith("Fix Prompt") && /Scene 1/.test(user)) return ok(s1++ === 2 ? "| table | only |" : scene(1, 27));
+      return base.call(messages);
+    };
+    const out = await runCloudStoryJob(new JobRun("job-best-1", "user-1"), PROMPT, { call });
+    expect(out).toBe("done");
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'uploaded'"))).toBe(true);
+  });
+});
+
+describe("one story at a time", () => {
+  it("makes a second story wait (not fail) while another holds the shared slots, then run once they are free", async () => {
+    const a = new JobRun("job-first-01", "user-1");
+    const b = new JobRun("job-second-1", "user-2");
+    const s = scripted(new Set());
+    expect(await runCloudStoryJob(a, PROMPT, { call: s.call, maxCalls: 1 })).toBe("yield");
+    expect(await runCloudStoryJob(b, PROMPT, { call: s.call })).toBe("wait");
+    expect(h.d1Calls.some((c) => c.sql.includes("status = 'failed'"))).toBe(false);
+    expect(await runCloudStoryJob(a, PROMPT, { call: s.call })).toBe("done");
+    const { releaseJobSlots } = await import("@/lib/sandbox/slots.server");
+    await releaseJobSlots("user-1", "job-first-01");
+    expect(await runCloudStoryJob(b, PROMPT, { call: s.call })).toBe("done");
+  });
+});
