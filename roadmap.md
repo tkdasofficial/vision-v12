@@ -8,12 +8,12 @@
 - [ ] Activate private evidence retention: app source now has runner-session writes, owner-only explicit reads, SHA-256, seven-day expiry, atomic 64-entry/4 MB job caps and migration; runtime capture/upload and live activation remain blocked on external deployment.
 - [ ] Wire shared report acceptance and lifecycle protections: malformed report parsing fixed and tested; production report gating, durable resume and coordinated budgets remain unfinished.
 - [ ] Activate corrected backend/runtime — blocked: this workspace does not support deployment of the existing external Cloudflare-hosted app; manual app builds and compiled-package replacement are not performed. Approval received; permission is not the blocker.
-- [ ] Run unchanged Monkey/Rabbit prompt within four remaining attempts — blocked until evidence transport is live and verified. No additional generation or workflow dispatch performed.
+- [ ] Continue unchanged Monkey/Rabbit prompt within three remaining attempts — current user authorized exactly one additional operation, now completed and failed; no further retry authorized by this request. Detailed evidence still unavailable.
 - [x] Documented partial work and blockers in docs/story-workflow-update-2026-10-19.md; 34 targeted app tests passed. No full-functionality claim.
 
 ## Current request — Five-attempt live story improvement loop
 - [x] Authenticated and recovered the exact prompt from latest failed chat c142cb99/run 39190584448; composer equality verified before submission.
-- [ ] Remaining four attempts blocked: attempt 1 job 072aa505/run 39196017653 failed scene-five prop verification after two repairs (320s); rejected scenes/extraction/repair evidence were deleted and no private diagnostic transport is active. Scores cannot be independently calculated.
+- [ ] Remaining three attempts: attempt 1 job 072aa505/run 39196017653 failed scene-five prop verification (320s); attempt 2 job 1e2acad2/run 39209884952 failed final scene requirements (364s). Current request authorized one additional operation only; no further retry. Detailed rejected evidence and independent scores remain unavailable.
 - [ ] Evidence-confirmed generation fix/regression/retest waits on retained raw evidence; deployment authorization received on 19 October at 05:54 UTC, but external deployment is unsupported here. No blind retry, speculative generation fix, provider change or deployment performed.
 - [x] Reported rubric, mandatory gates, identifiers and limitations in docs/story-live-testing-2026-10-19.md. 54 existing story/validator tests passed; reload restores failure, not a story. Completion criteria unmet.
 
