@@ -233,8 +233,8 @@ async function runSteps(job: JobRun, prompt: string, call: Call): Promise<void> 
       const rescored = scoreScene(candidate, i, prompt);
       // Keep whichever version scores higher; a worse rewrite never replaces a better draft.
       if (rescored.score >= score) { content = candidate; ({ score, issues } = rescored); }
-      const ref = rescored.score >= score && gen.recordId ? gen.recordId : prog?.ref ?? gen.recordId;
-      await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref: void ref ?? await slots.saveRecord(userId, jobId, slotId, "prompt", content), round }));
+      const ref = await slots.saveRecord(userId, jobId, slotId, "prompt", content);
+      await slots.saveSlotProgress(userId, jobId, slotId, JSON.stringify({ ref, round }));
     }
 
     while (score < SLOT_LIMITS.passScore && round - 1 < SLOT_LIMITS.maxFixAttempts) {
